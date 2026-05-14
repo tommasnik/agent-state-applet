@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Claude Code Agent State Server.
+
+Receives state pushes from Claude Code hooks via HTTP POST /agent,
+tracks running agents (with PID liveness checks), and writes current
+state atomically to /tmp/claude-agents.json for the Cinnamon applet.
+
+API contract (POST /agent, JSON body):
+    pid           int     PID of the Claude Code process (use $PPID in hook)
+    cwd           str     Working directory of the Claude Code session
+    state         str     idle | busy | waiting_for_approval | session_end
+    hook_event    str     PreToolUse | PostToolUse | Notification | Stop | SubagentStop
+    tool_name     str     Tool name (relevant when state=busy)
+    session_id    str     Claude Code session ID
+    subagent_count int    Number of currently active subagents (optional)
+    window_id     str     X11 window ID (decimal) captured at session start
+    tab_name      str     IntelliJ terminal tab title (cc-<session_id[:8]>)
+
+POST /focus {pid}: switch desktop and raise the agent's IDE window.
+"""
+
+import json
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+STATE_FILE = "/tmp/claude-agents.json"
+HOST = "127.0.0.1"
+PORT = 7855
+PID_CHECK_INTERVAL = 5   # seconds between liveness sweeps
+
+agents = {}
+agents_lock = threading.Lock()
+
+
+def write_state():
+    tmp = STATE_FILE + ".tmp"
+    with agents_lock:
+        snapshot = {k: dict(v) for k, v in agents.items()}
+    payload = {"agents": snapshot, "updated_at": time.time()}
+    with open(tmp, "w") as f:
+        json.dump(payload, f)
+    os.replace(tmp, STATE_FILE)
+
+
+def pid_alive(pid):
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
+def pid_checker():
+    while True:
+        time.sleep(PID_CHECK_INTERVAL)
+        now = time.time()
+        changed = False
+        with agents_lock:
+            for pid, agent in list(agents.items()):
+                if not pid_alive(pid):
+                    del agents[pid]
+                    changed = True
+        if changed:
+            write_state()
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        pass
+
+    def _respond(self, code, body=b""):
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path != "/status":
+            self._respond(404)
+            return
+        with agents_lock:
+            data = {"agents": dict(agents), "updated_at": time.time()}
+        self._respond(200, json.dumps(data).encode())
+
+    def do_POST(self):
+        if self.path == "/focus":
+            self._handle_focus()
+            return
+        if self.path != "/agent":
+            self._respond(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(length))
+        except (ValueError, TypeError):
+            self._respond(400, b'{"error":"invalid json"}')
+            return
+
+        pid = str(data.get("pid", "")).strip()
+        if not pid or not pid.isdigit():
+            self._respond(400, b'{"error":"missing pid"}')
+            return
+
+        state = data.get("state", "idle")
+        now = time.time()
+
+        with agents_lock:
+            if state == "session_end":
+                agents.pop(pid, None)
+            else:
+                existing = agents.get(pid, {})
+                agents[pid] = {
+                    "pid": int(pid),
+                    "cwd": data.get("cwd", existing.get("cwd", "")),
+                    "state": state,
+                    "timestamp": now,
+                    "hook_event": data.get("hook_event", ""),
+                    "tool_name": data.get("tool_name", ""),
+                    "session_id": data.get("session_id", existing.get("session_id", "")),
+                    "subagent_count": data.get("subagent_count", existing.get("subagent_count", 0)),
+                    "started_at": existing.get("started_at", now),
+                    # window_id / tab_name are set once at UserPromptSubmit and preserved
+                    "window_id": data.get("window_id", existing.get("window_id", "")),
+                    "tab_name":  data.get("tab_name",  existing.get("tab_name",  "")),
+                }
+
+        write_state()
+        self._respond(200, b'{"ok":true}')
+
+    def _handle_focus(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(length))
+        except (ValueError, TypeError):
+            self._respond(400, b'{"error":"invalid json"}')
+            return
+
+        pid = str(data.get("pid", "")).strip()
+        if not pid or not pid.isdigit():
+            self._respond(400, b'{"error":"missing pid"}')
+            return
+
+        with agents_lock:
+            agent = agents.get(pid)
+
+        if not agent:
+            self._respond(404, b'{"error":"agent not found"}')
+            return
+
+        window_id = agent.get("window_id", "")
+        if window_id:
+            env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
+            try:
+                # wmctrl -i -a switches to the window's desktop and raises+focuses it
+                subprocess.Popen(["wmctrl", "-i", "-a", window_id], env=env)
+            except Exception:
+                pass
+
+        self._respond(200, b'{"ok":true}')
+
+
+def main():
+    threading.Thread(target=pid_checker, daemon=True).start()
+
+    server = HTTPServer((HOST, PORT), Handler)
+    print(f"Claude State Server on {HOST}:{PORT}", flush=True)
+
+    def _shutdown(sig, frame):
+        try:
+            os.unlink(STATE_FILE)
+        except FileNotFoundError:
+            pass
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

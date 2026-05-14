@@ -1,0 +1,14 @@
+[Unit]
+Description=Claude Code Agent State Server
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=__SERVER_PATH__
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
