@@ -1,0 +1,13 @@
+<idea-plugin>
+    <id>com.github.agentfocus</id>
+    <name>Agent Terminal Focus</name>
+    <version>1.0</version>
+    <idea-version since-build="261"/>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.terminal</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <httpRequestHandler implementation="com.github.agentfocus.TerminalFocusService"/>
+    </extensions>
+</idea-plugin>
