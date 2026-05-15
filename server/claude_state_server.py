@@ -55,16 +55,51 @@ def pid_alive(pid):
         return False
 
 
+def _parse_xid(s):
+    if not s:
+        return None
+    try:
+        return int(str(s), 16) if str(s).startswith("0x") else int(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def get_open_xids():
+    """Returns set of integer X11 window IDs from wmctrl, or None on error."""
+    try:
+        env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
+        r = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=3, env=env)
+        xids = set()
+        for line in r.stdout.splitlines():
+            parts = line.split(None, 1)
+            if parts:
+                xid = _parse_xid(parts[0])
+                if xid is not None:
+                    xids.add(xid)
+        return xids
+    except Exception:
+        return None
+
+
 def pid_checker():
     while True:
         time.sleep(PID_CHECK_INTERVAL)
-        now = time.time()
+        open_xids = get_open_xids()
         changed = False
         with agents_lock:
             for pid, agent in list(agents.items()):
                 if not pid_alive(pid):
                     del agents[pid]
                     changed = True
+                    continue
+                # If the agent's IDE window no longer exists, remove the agent
+                # even if the process itself is still alive (e.g. IDEA closed
+                # but Claude survived the SIGHUP).
+                if open_xids is not None:
+                    wid = _parse_xid(agent.get("window_id", ""))
+                    if wid and wid not in open_xids:
+                        del agents[pid]
+                        changed = True
         if changed:
             write_state()
 

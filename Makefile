@@ -9,10 +9,10 @@ reload: applet server
 applet:
 	cp applet/applet.js    $(APPLET_DEST)/
 	cp applet/metadata.json $(APPLET_DEST)/
-	DISPLAY=$${DISPLAY:-:0} dbus-send --session \
-	  --dest=org.Cinnamon --type=method_call /org/Cinnamon \
-	  org.Cinnamon.ReloadXlet \
-	  string:"$(APPLET_UUID)" string:"APPLET"
+	DISPLAY=$${DISPLAY:-:0} gdbus call --session \
+	  --dest org.Cinnamon --object-path /org/Cinnamon \
+	  --method org.Cinnamon.ReloadXlet \
+	  "$(APPLET_UUID)" "APPLET"
 	@echo "applet reloaded"
 
 server:

@@ -9,5 +9,7 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <httpRequestHandler implementation="com.github.agentfocus.TerminalFocusService"/>
+        <httpRequestHandler implementation="com.github.agentfocus.TerminalListService"/>
+        <httpRequestHandler implementation="com.github.agentfocus.TerminalRenameService"/>
     </extensions>
 </idea-plugin>

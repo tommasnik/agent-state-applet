@@ -391,26 +391,6 @@ ClaudeAgentStateApplet.prototype = {
 
             let prevState = this._prevStates[pid];
 
-            // Notify: Claude finished its turn
-            if (agent.state === "done" && prevState !== "done") {
-                let project = this._projectName(agent);
-                this._sendNotification(agent,
-                    project + ": Claude finished",
-                    "Turn complete — ready for your reply.",
-                    "normal"
-                );
-            }
-
-            // Notify: needs approval
-            if (agent.state === "waiting_for_approval" && prevState !== "waiting_for_approval") {
-                let project = this._projectName(agent);
-                this._sendNotification(agent,
-                    project + ": Needs approval",
-                    "Claude Code is waiting for your input.",
-                    "critical"
-                );
-            }
-
             this._prevStates[pid] = agent.state;
 
             entry.tooltip.set_text(this._tooltipText(agent, now));

@@ -65,12 +65,15 @@ class TestHookStateMapping:
     CANONICAL_STATES = {"initialized", "working", "asking_user", "done", "waiting_for_approval"}
     KNOWN_EVENTS = {
         "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
-        "Notification", "Stop", "SubagentStop",
+        "Notification", "Stop",
     }
 
     def test_all_known_events_mapped(self):
         for event in self.KNOWN_EVENTS:
             assert event in hook.HOOK_STATE, f"event {event!r} not in HOOK_STATE"
+
+    def test_subagent_stop_not_mapped(self):
+        assert "SubagentStop" not in hook.HOOK_STATE
 
     def test_all_mapped_values_are_valid_states(self):
         for event, state in hook.HOOK_STATE.items():
@@ -83,11 +86,8 @@ class TestHookStateMapping:
     def test_stop_maps_to_done(self):
         assert hook.HOOK_STATE["Stop"] == "done"
 
-    def test_notification_maps_to_waiting_for_approval(self):
-        assert hook.HOOK_STATE["Notification"] == "waiting_for_approval"
-
-    def test_subagent_stop_maps_to_working(self):
-        assert hook.HOOK_STATE["SubagentStop"] == "working"
+    def test_notification_maps_to_done(self):
+        assert hook.HOOK_STATE["Notification"] == "done"
 
     def test_ask_user_tools_override_pre_tool_use_to_asking_user(self):
         for tool in hook.ASK_USER_TOOLS:
@@ -142,7 +142,7 @@ class TestPayloadFields:
             assert field in payload, f"{field!r} must be in UserPromptSubmit payload"
 
     def test_window_fields_absent_for_non_window_events(self):
-        for event in ("PreToolUse", "PostToolUse", "Stop", "Notification", "SubagentStop"):
+        for event in ("PreToolUse", "PostToolUse", "Stop", "Notification"):
             payload = self._make_payload(event)
             for field in self.WINDOW_FIELDS:
                 assert field not in payload, \

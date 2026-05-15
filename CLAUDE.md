@@ -62,7 +62,11 @@ POST /agent payload fields:
 
 **Server** (`claude_state_server.py`) — `systemctl --user restart claude-state-server`
 
-**Applet** (`applet.js`) — copy to `~/.local/share/cinnamon/applets/claude-agent-state@daktela/applet.js`, then remove+re-add applet in panel (no full Cinnamon restart needed).
+**Applet** (`applet.js`) — run `make applet` (copies the file + reloads via D-Bus). Underlying command:
+```
+gdbus call --session --dest org.Cinnamon --object-path /org/Cinnamon --method org.Cinnamon.ReloadXlet "claude-agent-state@daktela" "APPLET"
+```
+Note: `dbus-send` does NOT work for this — use `gdbus call`.
 
 ## Common tasks
 
