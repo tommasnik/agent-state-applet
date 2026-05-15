@@ -164,14 +164,54 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(404, b'{"error":"agent not found"}')
             return
 
-        window_id = agent.get("window_id", "")
-        if window_id:
-            env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
+        window_id    = agent.get("window_id", "")
+        project_root = agent.get("project_root", "")
+        env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
+        try:
+            r = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=2, env=env)
+            windows = []
+            for line in r.stdout.splitlines():
+                parts = line.split(None, 3)
+                if len(parts) >= 3:
+                    windows.append({
+                        "xid":     parts[0],
+                        "desktop": parts[1],
+                        "title":   parts[3] if len(parts) >= 4 else "",
+                    })
+
+            # IDEA titles: "project-name – current-file.ext"
+            # Each project has its own window; match by project name prefix.
+            if project_root:
+                project_name = project_root.rstrip("/").split("/")[-1]
+                for w in windows:
+                    t = w["title"]
+                    if t == project_name or t.startswith(project_name + " ") \
+                            or t.startswith(project_name + "–") \
+                            or t.startswith(project_name + "—"):
+                        window_id = w["xid"]
+                        break
+
+            if not window_id:
+                self._respond(404, b'{"error":"no window"}')
+                return
+
+            # Switch to the window's desktop before focusing
             try:
-                # wmctrl -i -a switches to the window's desktop and raises+focuses it
-                subprocess.Popen(["wmctrl", "-i", "-a", window_id], env=env)
-            except Exception:
-                pass
+                target_xid = int(window_id, 16) if window_id.startswith("0x") else int(window_id)
+            except ValueError:
+                target_xid = None
+            if target_xid:
+                for w in windows:
+                    try:
+                        if int(w["xid"], 16) == target_xid:
+                            subprocess.run(["wmctrl", "-s", w["desktop"]], env=env, timeout=2)
+                            break
+                    except ValueError:
+                        pass
+
+            subprocess.Popen(["wmctrl", "-i", "-a", window_id], env=env)
+        except Exception:
+            pass
 
         self._respond(200, b'{"ok":true}')
 

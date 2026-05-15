@@ -289,12 +289,12 @@ ClaudeAgentStateApplet.prototype = {
         this._transient.forEach(function(w) { w.destroy(); });
         this._transient = [];
 
-        // Group agents by project_root (fallback: window_id) — one group per IDE project
+        // Group agents by project_root (fallback: cwd) — one group per IDE project
         let groupOrder = [];
         let groupMap   = {};
         for (let i = 0; i < sorted.length; i++) {
             let agent = sorted[i];
-            let gkey  = agent.project_root || agent.window_id || "";
+            let gkey  = agent.project_root || agent.cwd || "";
             if (!groupMap[gkey]) {
                 groupMap[gkey] = [];
                 groupOrder.push(gkey);
@@ -309,8 +309,12 @@ ClaudeAgentStateApplet.prototype = {
             if (gi > 0) desired.push({ type: "sep" });
             let gkey     = groupOrder[gi];
             let group    = groupMap[gkey];
-            let firstPid = String(group[0].pid);
-            desired.push({ type: "label", text: this._projectName(group[0]), pid: firstPid });
+            // Prefer a pid that has window_id set so clicking the label focuses the right IDEA.
+            let focusPid = String(group[0].pid);
+            for (let i = 0; i < group.length; i++) {
+                if (group[i].window_id) { focusPid = String(group[i].pid); break; }
+            }
+            desired.push({ type: "label", text: this._projectName(group[0]), pid: focusPid });
             for (let i = 0; i < group.length; i++) {
                 desired.push({ type: "ball", pid: String(group[i].pid) });
             }
@@ -430,7 +434,7 @@ ClaudeAgentStateApplet.prototype = {
     },
 
     _tooltipText: function(agent, now) {
-        let project    = agent.cwd ? agent.cwd.split("/").filter(Boolean).pop() : "unknown";
+        let project    = (agent.project_root || agent.cwd || "").split("/").filter(Boolean).pop() || "unknown";
         let stateLabel = STATE_LABEL[agent.state] || agent.state;
         let toolInfo   = (agent.state === "working" && agent.tool_name) ? ": " + agent.tool_name : "";
         let inState    = agent.timestamp  ? formatDuration(now - agent.timestamp)  : "-";
