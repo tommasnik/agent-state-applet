@@ -106,27 +106,39 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(400, b'{"error":"missing pid"}')
             return
 
-        state = data.get("state", "idle")
-        now = time.time()
+        state      = data.get("state", "idle")
+        hook_event = data.get("hook_event", "")
+        tty        = data.get("tty", "")
+        now        = time.time()
 
         with agents_lock:
             if state == "session_end":
                 agents.pop(pid, None)
             else:
+                # When a new session starts on the same PTY, remove any lingering
+                # done agents from the previous session on that terminal (/clear).
+                if tty and hook_event == "SessionStart":
+                    for old_pid in list(agents.keys()):
+                        if old_pid != pid and agents[old_pid].get("tty") == tty \
+                                and agents[old_pid].get("state") == "done":
+                            del agents[old_pid]
+
                 existing = agents.get(pid, {})
                 agents[pid] = {
                     "pid": int(pid),
                     "cwd": data.get("cwd", existing.get("cwd", "")),
                     "state": state,
                     "timestamp": now,
-                    "hook_event": data.get("hook_event", ""),
+                    "hook_event": hook_event,
                     "tool_name": data.get("tool_name", ""),
                     "session_id": data.get("session_id", existing.get("session_id", "")),
                     "subagent_count": data.get("subagent_count", existing.get("subagent_count", 0)),
                     "started_at": existing.get("started_at", now),
                     # window_id / tab_name are set once at UserPromptSubmit and preserved
-                    "window_id": data.get("window_id", existing.get("window_id", "")),
-                    "tab_name":  data.get("tab_name",  existing.get("tab_name",  "")),
+                    "window_id":    data.get("window_id",    existing.get("window_id",    "")),
+                    "tab_name":     data.get("tab_name",     existing.get("tab_name",     "")),
+                    "tty":          data.get("tty",          existing.get("tty",          "")),
+                    "project_root": data.get("project_root", existing.get("project_root", "")),
                 }
 
         write_state()

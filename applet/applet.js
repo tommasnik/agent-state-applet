@@ -17,6 +17,7 @@ const LABEL_MAX = 12;
 const STATE_COLOR = {
     initialized:          "#888888",
     working:              "#e8c000",
+    asking_user:          "#4499ff",
     done:                 "#44bb44",
     waiting_for_approval: "#ffaa00",
 };
@@ -24,6 +25,7 @@ const STATE_COLOR = {
 const STATE_LABEL = {
     initialized:          "Initialized",
     working:              "Working",
+    asking_user:          "Asking user",
     done:                 "Done",
     waiting_for_approval: "Waiting for approval",
 };
@@ -287,26 +289,28 @@ ClaudeAgentStateApplet.prototype = {
         this._transient.forEach(function(w) { w.destroy(); });
         this._transient = [];
 
-        // Group agents by window_id to visually cluster per IDE window
+        // Group agents by project_root (fallback: window_id) — one group per IDE project
         let groupOrder = [];
         let groupMap   = {};
         for (let i = 0; i < sorted.length; i++) {
             let agent = sorted[i];
-            let wid   = agent.window_id || "";
-            if (!groupMap[wid]) {
-                groupMap[wid] = [];
-                groupOrder.push(wid);
+            let gkey  = agent.project_root || agent.window_id || "";
+            if (!groupMap[gkey]) {
+                groupMap[gkey] = [];
+                groupOrder.push(gkey);
             }
-            groupMap[wid].push(agent);
+            groupMap[gkey].push(agent);
         }
 
         // Determine desired box child sequence: [sep?, label, ball, ball, …, sep?, …]
+        // label carries firstPid so clicking it focuses the IDE window via the server.
         let desired = [];
         for (let gi = 0; gi < groupOrder.length; gi++) {
             if (gi > 0) desired.push({ type: "sep" });
-            let wid   = groupOrder[gi];
-            let group = groupMap[wid];
-            desired.push({ type: "label", text: this._projectName(group[0]) });
+            let gkey     = groupOrder[gi];
+            let group    = groupMap[gkey];
+            let firstPid = String(group[0].pid);
+            desired.push({ type: "label", text: this._projectName(group[0]), pid: firstPid });
             for (let i = 0; i < group.length; i++) {
                 desired.push({ type: "ball", pid: String(group[i].pid) });
             }
@@ -339,10 +343,17 @@ ClaudeAgentStateApplet.prototype = {
                     this._box.add_actor(sep);
                     this._transient.push(sep);
                 } else if (d.type === "label") {
+                    let clickPid = d.pid;
                     let lbl = new St.Label({
-                        text:  d.text,
-                        style: "font-size: 10px; color: #aaaaaa; margin: 0 3px 0 0;",
+                        text:        d.text,
+                        style:       "font-size: 10px; color: #aaaaaa; margin: 0 3px 0 0;",
+                        reactive:    true,
+                        track_hover: true,
                     });
+                    lbl.connect("button-press-event", Lang.bind(this, function(actor, event) {
+                        if (event.get_button() === 1) this._focusAgent(clickPid);
+                        return true;
+                    }));
                     this._box.add_actor(lbl);
                     this._transient.push(lbl);
                 } else {
@@ -403,8 +414,9 @@ ClaudeAgentStateApplet.prototype = {
     },
 
     _projectName: function(agent) {
-        if (!agent.cwd) return "?";
-        let parts = agent.cwd.split("/").filter(Boolean);
+        let path = agent.project_root || agent.cwd;
+        if (!path) return "?";
+        let parts = path.split("/").filter(Boolean);
         let name  = parts[parts.length - 1] || "?";
         return name.length > LABEL_MAX ? name.slice(0, LABEL_MAX - 1) + "…" : name;
     },
