@@ -213,6 +213,18 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
+        # Ask the IDEA plugin to switch to the correct terminal tab.
+        tab_name = agent.get("tab_name", "")
+        if tab_name and project_root:
+            project_name = project_root.rstrip("/").split("/")[-1]
+            try:
+                import urllib.request as _ur
+                import urllib.parse as _up
+                qs = _up.urlencode({"tabName": tab_name, "project": project_name})
+                _ur.urlopen(f"http://localhost:63342/api/terminalFocus?{qs}", timeout=1)
+            except Exception:
+                pass
+
         self._respond(200, b'{"ok":true}')
 
 
