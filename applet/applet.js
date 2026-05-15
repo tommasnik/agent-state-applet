@@ -144,7 +144,7 @@ ClaudeAgentStateApplet.prototype = {
         this.actor.add_actor(this._box);
         this.actor.set_style("padding: 0 4px;");
 
-        // pid (str) -> { ball, tooltip: AgentTooltip, color, inBox }
+        // pid (str) -> { ball, tooltip: AgentTooltip, color, state, inBox }
         this._entries       = {};
         // transient decorations (labels, separators) rebuilt each tick
         this._transient     = [];
@@ -271,12 +271,17 @@ ClaudeAgentStateApplet.prototype = {
                 });
                 ball.connect("button-press-event", Lang.bind(this, function(actor, event) {
                     if (event.get_button() === 1) {
-                        this._focusAgent(clickPid);
+                        let e = this._entries[clickPid];
+                        if (e && e.state === "done") {
+                            this._resetAgent(clickPid);
+                        } else {
+                            this._focusAgent(clickPid);
+                        }
                     }
                     return true;
                 }));
                 let tip = new AgentTooltip(ball);
-                this._entries[pid] = { ball: ball, tooltip: tip, color: STATE_COLOR.initialized, inBox: false };
+                this._entries[pid] = { ball: ball, tooltip: tip, color: STATE_COLOR.initialized, state: "initialized", inBox: false };
             }
         }
 
@@ -388,6 +393,7 @@ ClaudeAgentStateApplet.prototype = {
                 entry.color = color;
                 entry.ball.set_style(this._ballStyle(color));
             }
+            entry.state = agent.state;
 
             let prevState = this._prevStates[pid];
 
@@ -432,6 +438,15 @@ ClaudeAgentStateApplet.prototype = {
         ];
         if (agent.subagent_count > 0) lines.push("Subagents: " + agent.subagent_count);
         return lines.join("\n");
+    },
+
+    _resetAgent: function(pid) {
+        Util.spawn([
+            "curl", "-s", "-X", "POST",
+            "http://127.0.0.1:7855/agent",
+            "-H", "Content-Type: application/json",
+            "-d", JSON.stringify({ pid: parseInt(pid, 10), state: "initialized" }),
+        ]);
     },
 
     _focusAgent: function(pid) {
