@@ -272,11 +272,8 @@ ClaudeAgentStateApplet.prototype = {
                 ball.connect("button-press-event", Lang.bind(this, function(actor, event) {
                     if (event.get_button() === 1) {
                         let e = this._entries[clickPid];
-                        if (e && e.state === "done") {
-                            this._resetAgent(clickPid);
-                        } else {
-                            this._focusAgent(clickPid);
-                        }
+                        this._focusAgent(clickPid);
+                        if (e && e.state === "done") this._resetAgent(clickPid);
                     }
                     return true;
                 }));
@@ -286,13 +283,27 @@ ClaudeAgentStateApplet.prototype = {
         }
 
         // Rebuild the box layout:
-        //   • Remove transient decorations (labels, separators)
-        //   • Keep ball actors in the box if possible; move them when order changes
+        //   Each group gets a vertical block: project name on top, balls row below.
+        //   Balls are rescued from their current parents before transient teardown
+        //   so destroying the old group containers doesn't take the balls with them.
         // -----------------------------------------------------------------------
 
-        // Tear down transient decorations
+        // Rescue balls from their current parent containers before teardown
+        for (let pid in this._entries) {
+            let entry = this._entries[pid];
+            let parent = entry.ball.get_parent();
+            if (parent) parent.remove_actor(entry.ball);
+            entry.inBox = false;
+        }
+
+        // Tear down transient decorations (group boxes, labels, separators)
         this._transient.forEach(function(w) { w.destroy(); });
         this._transient = [];
+
+        // Remove any remaining children from main box
+        this._box.get_children().forEach(Lang.bind(this, function(c) {
+            this._box.remove_actor(c);
+        }));
 
         // Group agents by project_root (fallback: cwd) — one group per IDE project
         let groupOrder = [];
@@ -307,78 +318,54 @@ ClaudeAgentStateApplet.prototype = {
             groupMap[gkey].push(agent);
         }
 
-        // Determine desired box child sequence: [sep?, label, ball, ball, …, sep?, …]
-        // label carries firstPid so clicking it focuses the IDE window via the server.
-        let desired = [];
+        // Build one vertical block per group: [name label] on top, [● ● …] row below
         for (let gi = 0; gi < groupOrder.length; gi++) {
-            if (gi > 0) desired.push({ type: "sep" });
-            let gkey     = groupOrder[gi];
-            let group    = groupMap[gkey];
-            // Prefer a pid that has window_id set so clicking the label focuses the right IDEA.
+            if (gi > 0) {
+                let sep = new St.Widget({
+                    style: "width: 1px; background-color: #555555; margin: 3px 5px;",
+                });
+                this._box.add_actor(sep);
+                this._transient.push(sep);
+            }
+
+            let gkey  = groupOrder[gi];
+            let group = groupMap[gkey];
+
+            // Prefer a pid that has window_id for focus action
             let focusPid = String(group[0].pid);
             for (let i = 0; i < group.length; i++) {
                 if (group[i].window_id) { focusPid = String(group[i].pid); break; }
             }
-            desired.push({ type: "label", text: this._projectName(group[0]), pid: focusPid });
+
+            let groupBox = new St.BoxLayout({ vertical: true });
+
+            // Project name label on top
+            let clickPid = focusPid;
+            let lbl = new St.Label({
+                text:        this._projectName(group[0]),
+                style:       "font-size: 10px; color: #aaaaaa; margin: 0 2px 1px 2px;",
+                reactive:    true,
+                track_hover: true,
+            });
+            lbl.connect("button-press-event", Lang.bind(this, function(actor, event) {
+                if (event.get_button() === 1) this._focusAgent(clickPid);
+                return true;
+            }));
+            groupBox.add_actor(lbl);
+
+            // Balls row below the label
+            let ballsRow = new St.BoxLayout({ vertical: false });
+            ballsRow.set_style("padding: 0 2px;");
             for (let i = 0; i < group.length; i++) {
-                desired.push({ type: "ball", pid: String(group[i].pid) });
-            }
-        }
-
-        // Check whether current box children already match the desired sequence
-        let current = this._box.get_children();
-        let needRebuild = current.length !== desired.length;
-        if (!needRebuild) {
-            for (let i = 0; i < desired.length; i++) {
-                let d = desired[i];
-                if (d.type === "ball") {
-                    if (current[i] !== this._entries[d.pid].ball) { needRebuild = true; break; }
-                } else {
-                    needRebuild = true; break;
-                }
-            }
-        }
-
-        if (needRebuild) {
-            current.forEach(Lang.bind(this, function(c) { this._box.remove_actor(c); }));
-            for (let pid in this._entries) this._entries[pid].inBox = false;
-
-            for (let i = 0; i < desired.length; i++) {
-                let d = desired[i];
-                if (d.type === "sep") {
-                    let sep = new St.Widget({
-                        style: "width: 1px; background-color: #555555; margin: 3px 5px;",
-                    });
-                    this._box.add_actor(sep);
-                    this._transient.push(sep);
-                } else if (d.type === "label") {
-                    let clickPid = d.pid;
-                    let lbl = new St.Label({
-                        text:        d.text,
-                        style:       "font-size: 10px; color: #aaaaaa; margin: 0 3px 0 0;",
-                        reactive:    true,
-                        track_hover: true,
-                    });
-                    lbl.connect("button-press-event", Lang.bind(this, function(actor, event) {
-                        if (event.get_button() === 1) this._focusAgent(clickPid);
-                        return true;
-                    }));
-                    this._box.add_actor(lbl);
-                    this._transient.push(lbl);
-                } else {
-                    let entry = this._entries[d.pid];
-                    this._box.add_actor(entry.ball);
-                    entry.inBox = true;
-                }
-            }
-        } else {
-            for (let pid in this._entries) {
+                let pid   = String(group[i].pid);
                 let entry = this._entries[pid];
-                if (!entry.inBox) {
-                    this._box.add_actor(entry.ball);
-                    entry.inBox = true;
-                }
+                ballsRow.add_actor(entry.ball);
+                entry.inBox = true;
             }
+            groupBox.add_actor(ballsRow);
+
+            this._box.add_actor(groupBox);
+            this._transient.push(groupBox);
         }
 
         // Update ball styles, tooltips, and fire notifications for state transitions
