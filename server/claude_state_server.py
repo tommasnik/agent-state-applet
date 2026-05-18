@@ -319,6 +319,12 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
+        # Persist the resolved window_id so future focus calls and state reads use it.
+        if window_id and window_id != agent.get("window_id", ""):
+            with agents_lock:
+                if pid in agents:
+                    agents[pid]["window_id"] = window_id
+
         # Ask the IDEA plugin to switch to the correct terminal tab.
         tab_name = agent.get("tab_name", "")
         if tab_name and project_root:
@@ -340,7 +346,7 @@ class Handler(BaseHTTPRequestHandler):
                     agents[pid]["timestamp"] = time.time()
             write_state()
 
-        self._respond(200, b'{"ok":true}')
+        self._respond(200, json.dumps({"ok": True, "window_id": window_id}).encode())
 
 
 BACKUP_FILE = STATE_FILE + ".bak"

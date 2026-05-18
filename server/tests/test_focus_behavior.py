@@ -380,3 +380,86 @@ class TestFocusResetsState:
         args = _wmctrl_popen_args(m_pop)
         assert args is not None, \
             "wmctrl must be called on second focus after state reset to initialized"
+
+
+# ---------------------------------------------------------------------------
+# /focus must return the resolved window_id so the applet can flash correctly
+# ---------------------------------------------------------------------------
+
+class TestFocusResponseIncludesResolvedWindowId:
+    """The /focus response must include the window_id that was actually used.
+
+    The applet captures window_id from its local cache *before* the focus HTTP
+    call.  When the server resolves a different (more current) window via
+    project-name matching, the applet has no way to know unless the server
+    sends it back in the response.  Without this, _flashWindow fires on the
+    wrong window.
+    """
+
+    def test_response_includes_stored_window_id_when_no_project_match(self, server):
+        """When no project-name match, the stored window_id must appear in the response."""
+        _post("/agent", {
+            "pid": 9001, "state": "working",
+            "window_id": "0x00200099",
+            "project_root": "/home/user/no-match-project",
+        })
+        with mock.patch("subprocess.run") as run_mock, \
+             mock.patch("subprocess.Popen"):
+            run_mock.return_value = mock.Mock(stdout=WMCTRL_MULTI, returncode=0)
+            code, body = _post("/focus", {"pid": 9001})
+
+        assert code == 200
+        assert body.get("window_id") == "0x00200099", \
+            f"Response must echo stored window_id when no project match, got {body}"
+
+    def test_response_includes_project_matched_window_id_when_match_found(self, server):
+        """When project name matches a live window, that window's xid must be in the response."""
+        _post("/agent", {
+            "pid": 9002, "state": "working",
+            "window_id": "0x00200099",  # stale
+            "project_root": "/home/user/idea-project",
+        })
+        with mock.patch("subprocess.run") as run_mock, \
+             mock.patch("subprocess.Popen"):
+            run_mock.return_value = mock.Mock(stdout=WMCTRL_MULTI, returncode=0)
+            code, body = _post("/focus", {"pid": 9002})
+
+        assert code == 200
+        assert body.get("window_id") == "0x00200001", \
+            f"Response must include project-matched window_id 0x00200001, got {body}"
+
+    def test_resolved_window_id_persisted_in_agent_state(self, server):
+        """After a project-name match, the resolved window_id must be saved in agents[pid].
+
+        This ensures subsequent focus calls and state reads use the fresh window_id.
+        """
+        _post("/agent", {
+            "pid": 9003, "state": "working",
+            "window_id": "0x00200099",  # stale
+            "project_root": "/home/user/idea-project",
+        })
+        with mock.patch("subprocess.run") as run_mock, \
+             mock.patch("subprocess.Popen"):
+            run_mock.return_value = mock.Mock(stdout=WMCTRL_MULTI, returncode=0)
+            _post("/focus", {"pid": 9003})
+
+        with srv.agents_lock:
+            saved_wid = srv.agents.get("9003", {}).get("window_id")
+        assert saved_wid == "0x00200001", \
+            f"Resolved window_id must be persisted in agents dict, got {saved_wid}"
+
+    def test_response_window_id_empty_when_no_window_found(self, server):
+        """When neither stored id nor project match yields a window, response window_id is empty."""
+        _post("/agent", {
+            "pid": 9004, "state": "working",
+            "window_id": "",
+            "project_root": "/home/user/no-match-project",
+        })
+        with mock.patch("subprocess.run") as run_mock, \
+             mock.patch("subprocess.Popen"):
+            run_mock.return_value = mock.Mock(stdout=WMCTRL_MULTI, returncode=0)
+            code, body = _post("/focus", {"pid": 9004})
+
+        assert code == 200
+        assert body.get("window_id", "") == "", \
+            f"Response window_id must be empty when no window found, got {body}"

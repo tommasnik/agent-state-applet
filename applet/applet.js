@@ -466,21 +466,40 @@ ClaudeAgentStateApplet.prototype = {
     },
 
     _focusAgent: function(pid) {
-        Util.spawn([
-            "curl", "-s", "-X", "POST",
-            "http://127.0.0.1:7855/focus",
-            "-H", "Content-Type: application/json",
-            "-d", JSON.stringify({ pid: parseInt(pid, 10) }),
-        ]);
-        let agent = this._lastAgents[pid];
-        let windowId = agent ? agent.window_id : null;
-        if (windowId) {
-            // Delay slightly so wmctrl has time to switch workspace and raise the window
-            Mainloop.timeout_add(300, Lang.bind(this, function() {
-                this._flashWindow(windowId);
-                return false;
-            }));
-        }
+        let body = JSON.stringify({ pid: parseInt(pid, 10) });
+        let proc = new Gio.Subprocess({
+            argv: [
+                "curl", "-s", "-X", "POST",
+                "http://127.0.0.1:7855/focus",
+                "-H", "Content-Type: application/json",
+                "-d", body,
+            ],
+            flags: Gio.SubprocessFlags.STDOUT_PIPE,
+        });
+        try { proc.init(null); } catch (_) { return; }
+
+        // Read response so we get the server-resolved window_id for flashing.
+        // The server may resolve a different (fresher) window_id via project-name
+        // matching; using the stale cached value would flash the wrong window.
+        proc.communicate_utf8_async(null, null, Lang.bind(this, function(p, res) {
+            let windowId = null;
+            try {
+                let [, stdout] = p.communicate_utf8_finish(res);
+                let data = JSON.parse(stdout || "{}");
+                windowId = data.window_id || null;
+            } catch (_) {}
+            if (!windowId) {
+                let agent = this._lastAgents[pid];
+                windowId = agent ? (agent.window_id || null) : null;
+            }
+            if (windowId) {
+                // Delay slightly so wmctrl has time to switch workspace and raise the window
+                Mainloop.timeout_add(300, Lang.bind(this, function() {
+                    this._flashWindow(windowId);
+                    return false;
+                }));
+            }
+        }));
     },
 
     _flashWindow: function(windowId) {
@@ -500,20 +519,29 @@ ClaudeAgentStateApplet.prototype = {
             if (!metaWin || !metaWin.get_xwindow) continue;
             if (metaWin.get_xwindow() !== targetXid) continue;
 
-            let overlay = new Clutter.Actor({
-                background_color: new Clutter.Color({ red: 255, green: 140, blue: 0, alpha: 130 }),
-                x: 0,
-                y: 0,
-                width: actor.width,
-                height: actor.height,
-                reactive: false,
-            });
-            actor.add_actor(overlay);
-            overlay.ease({
-                opacity: 0,
-                duration: 900,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                onComplete: function() { overlay.destroy(); },
+            let W = actor.width;
+            let H = actor.height;
+            let T = 6; // border thickness px
+            let borders = [
+                { x: 0,     y: 0,     width: W, height: T }, // top
+                { x: 0,     y: H - T, width: W, height: T }, // bottom
+                { x: 0,     y: 0,     width: T, height: H }, // left
+                { x: W - T, y: 0,     width: T, height: H }, // right
+            ];
+            let color = new Clutter.Color({ red: 255, green: 140, blue: 0, alpha: 220 });
+            borders.forEach(function(r) {
+                let strip = new Clutter.Actor({
+                    background_color: color,
+                    x: r.x, y: r.y, width: r.width, height: r.height,
+                    reactive: false,
+                });
+                actor.add_actor(strip);
+                strip.ease({
+                    opacity: 0,
+                    duration: 700,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                    onComplete: function() { strip.destroy(); },
+                });
             });
             break;
         }

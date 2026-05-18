@@ -254,4 +254,5 @@ class TestFocusEndpoint:
         _post("/agent", {"pid": 4001, "state": "working"})
         code, body = _post("/focus", {"pid": 4001})
         assert code == 200
-        assert body == {"ok": True}
+        assert body.get("ok") is True
+        assert "window_id" in body
