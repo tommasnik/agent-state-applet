@@ -331,6 +331,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+        # Atomically acknowledge the focus: reset done/waiting agents to initialized
+        # so the applet dot turns grey immediately without a separate /agent call.
+        if agent.get("state") in ("done", "waiting_for_approval"):
+            with agents_lock:
+                if pid in agents and agents[pid].get("state") in ("done", "waiting_for_approval"):
+                    agents[pid]["state"] = "initialized"
+                    agents[pid]["timestamp"] = time.time()
+            write_state()
+
         self._respond(200, b'{"ok":true}')
 
 

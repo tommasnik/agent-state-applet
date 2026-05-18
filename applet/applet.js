@@ -2,6 +2,7 @@ const Applet = imports.ui.applet;
 const St = imports.gi.St;
 const GLib = imports.gi.GLib;
 const Gio = imports.gi.Gio;
+const Clutter = imports.gi.Clutter;
 const Mainloop = imports.mainloop;
 const Lang = imports.lang;
 const Util = imports.misc.util;
@@ -154,6 +155,8 @@ ClaudeAgentStateApplet.prototype = {
         this._prevStates    = {};
         // pending debounced update timer id
         this._pendingUpdate = null;
+        // last known agents data (pid -> agent) for focus/flash
+        this._lastAgents    = {};
 
         // inotify: watch for changes to the state file (including atomic replace)
         this._setupFileMonitor();
@@ -237,6 +240,7 @@ ClaudeAgentStateApplet.prototype = {
         if (!data) return;
 
         let agents = data.agents || {};
+        this._lastAgents = agents;
 
         // Sort oldest first (leftmost in panel)
         let sorted = Object.values(agents).sort(function(a, b) {
@@ -273,9 +277,7 @@ ClaudeAgentStateApplet.prototype = {
                 });
                 ball.connect("button-press-event", Lang.bind(this, function(actor, event) {
                     if (event.get_button() === 1) {
-                        let e = this._entries[clickPid];
                         this._focusAgent(clickPid);
-                        if (e && (e.state === "done" || e.state === "waiting_for_approval")) this._resetAgent(clickPid);
                     }
                     return true;
                 }));
@@ -352,10 +354,6 @@ ClaudeAgentStateApplet.prototype = {
             lbl.connect("button-press-event", Lang.bind(this, function(actor, event) {
                 if (event.get_button() === 1) {
                     this._focusAgent(clickPid);
-                    if (group.length === 1) {
-                        let e = this._entries[clickPid];
-                        if (e && (e.state === "done" || e.state === "waiting_for_approval")) this._resetAgent(clickPid);
-                    }
                 }
                 return true;
             }));
@@ -467,15 +465,6 @@ ClaudeAgentStateApplet.prototype = {
         return lines.join("\n");
     },
 
-    _resetAgent: function(pid) {
-        Util.spawn([
-            "curl", "-s", "-X", "POST",
-            "http://127.0.0.1:7855/agent",
-            "-H", "Content-Type: application/json",
-            "-d", JSON.stringify({ pid: parseInt(pid, 10), state: "initialized" }),
-        ]);
-    },
-
     _focusAgent: function(pid) {
         Util.spawn([
             "curl", "-s", "-X", "POST",
@@ -483,6 +472,51 @@ ClaudeAgentStateApplet.prototype = {
             "-H", "Content-Type: application/json",
             "-d", JSON.stringify({ pid: parseInt(pid, 10) }),
         ]);
+        let agent = this._lastAgents[pid];
+        let windowId = agent ? agent.window_id : null;
+        if (windowId) {
+            // Delay slightly so wmctrl has time to switch workspace and raise the window
+            Mainloop.timeout_add(300, Lang.bind(this, function() {
+                this._flashWindow(windowId);
+                return false;
+            }));
+        }
+    },
+
+    _flashWindow: function(windowId) {
+        if (!windowId) return;
+        let targetXid;
+        try {
+            targetXid = windowId.startsWith("0x")
+                ? parseInt(windowId, 16)
+                : parseInt(windowId, 10);
+        } catch(_) { return; }
+        if (!targetXid) return;
+
+        let actors = global.get_window_actors();
+        for (let i = 0; i < actors.length; i++) {
+            let actor = actors[i];
+            let metaWin = actor.get_meta_window();
+            if (!metaWin || !metaWin.get_xwindow) continue;
+            if (metaWin.get_xwindow() !== targetXid) continue;
+
+            let overlay = new Clutter.Actor({
+                background_color: new Clutter.Color({ red: 255, green: 140, blue: 0, alpha: 130 }),
+                x: 0,
+                y: 0,
+                width: actor.width,
+                height: actor.height,
+                reactive: false,
+            });
+            actor.add_actor(overlay);
+            overlay.ease({
+                opacity: 0,
+                duration: 900,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onComplete: function() { overlay.destroy(); },
+            });
+            break;
+        }
     },
 
     on_applet_removed_from_panel: function() {
