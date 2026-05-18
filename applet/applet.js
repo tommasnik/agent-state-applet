@@ -3,6 +3,7 @@ const St = imports.gi.St;
 const GLib = imports.gi.GLib;
 const Gio = imports.gi.Gio;
 const Clutter = imports.gi.Clutter;
+const Pango = imports.gi.Pango;
 const Mainloop = imports.mainloop;
 const Lang = imports.lang;
 const Util = imports.misc.util;
@@ -11,8 +12,7 @@ const Main = imports.ui.main;
 const UUID = "claude-agent-state@tommasnik";
 const STATE_FILE = "/tmp/claude-agents.json";
 const FALLBACK_MS = 3000;  // fallback poll if inotify misses something
-const BALL_SIZE = 16;
-const BALL_MARGIN = 2;
+const BALL_MARGIN = 1;
 const LABEL_MAX = 12;
 
 const STATE_COLOR = {
@@ -143,9 +143,10 @@ ClaudeAgentStateApplet.prototype = {
     _init: function(metadata, orientation, panel_height, instance_id) {
         Applet.Applet.prototype._init.call(this, orientation, panel_height, instance_id);
 
+        this._ph = panel_height;
         this._box = new St.BoxLayout({ vertical: false });
         this.actor.add_actor(this._box);
-        this.actor.set_style("padding: 0 4px;");
+        this.actor.set_style("padding: 0;");
 
         // pid (str) -> { ball, tooltip: AgentTooltip, color, state, inBox }
         this._entries       = {};
@@ -270,10 +271,20 @@ ClaudeAgentStateApplet.prototype = {
             let pid   = String(agent.pid);
             if (!this._entries[pid]) {
                 let clickPid = pid;
-                let ball = new St.Widget({
+                let lbl = new St.Label({
+                    style: "color: rgba(255,255,255,0.9); font-size: 10px; font-weight: bold;",
+                });
+                lbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.MIDDLE);
+                lbl.clutter_text.set_single_line_mode(true);
+                let ball = new St.Bin({
                     reactive:    true,
                     track_hover: true,
                     style:       this._ballStyle(STATE_COLOR.initialized),
+                    child:       lbl,
+                    x_fill:      true,
+                    y_fill:      false,
+                    x_align:     St.Align.MIDDLE,
+                    y_align:     St.Align.MIDDLE,
                 });
                 ball.connect("button-press-event", Lang.bind(this, function(actor, event) {
                     if (event.get_button() === 1) {
@@ -282,7 +293,7 @@ ClaudeAgentStateApplet.prototype = {
                     return true;
                 }));
                 let tip = new AgentTooltip(ball);
-                this._entries[pid] = { ball: ball, tooltip: tip, color: STATE_COLOR.initialized, state: "initialized", inBox: false };
+                this._entries[pid] = { ball: ball, lbl: lbl, tooltip: tip, color: STATE_COLOR.initialized, state: "initialized", inBox: false };
             }
         }
 
@@ -322,11 +333,12 @@ ClaudeAgentStateApplet.prototype = {
             groupMap[gkey].push(agent);
         }
 
-        // Build one vertical block per group: [name label] on top, [● ● …] row below
+        // Build one horizontal block per group: [■ ■ …] squares side by side
         for (let gi = 0; gi < groupOrder.length; gi++) {
             if (gi > 0) {
                 let sep = new St.Widget({
-                    style: "width: 1px; background-color: #555555; margin: 3px 5px;",
+                    style: "width: 1px; background-color: rgba(255,255,255,0.18);"
+                         + " height: " + this._ph + "px; margin: 0 2px;",
                 });
                 this._box.add_actor(sep);
                 this._transient.push(sep);
@@ -335,41 +347,13 @@ ClaudeAgentStateApplet.prototype = {
             let gkey  = groupOrder[gi];
             let group = groupMap[gkey];
 
-            // Prefer a pid that has window_id for focus action
-            let focusPid = String(group[0].pid);
-            for (let i = 0; i < group.length; i++) {
-                if (group[i].window_id) { focusPid = String(group[i].pid); break; }
-            }
-
-            let groupBox = new St.BoxLayout({ vertical: true });
-
-            // Project name label on top
-            let clickPid = focusPid;
-            let lbl = new St.Label({
-                text:        this._projectName(group[0]),
-                style:       "font-size: 10px; color: #aaaaaa; margin: 0 2px 1px 2px;",
-                reactive:    true,
-                track_hover: true,
-            });
-            lbl.connect("button-press-event", Lang.bind(this, function(actor, event) {
-                if (event.get_button() === 1) {
-                    this._focusAgent(clickPid);
-                }
-                return true;
-            }));
-            groupBox.add_actor(lbl);
-
-            // Balls row below the label
-            let ballsRow = new St.BoxLayout({ vertical: false });
-            ballsRow.set_style("padding: 0 2px;");
+            let groupBox = new St.BoxLayout({ vertical: false });
             for (let i = 0; i < group.length; i++) {
                 let pid   = String(group[i].pid);
                 let entry = this._entries[pid];
-                ballsRow.add_actor(entry.ball);
+                groupBox.add_actor(entry.ball);
                 entry.inBox = true;
             }
-            groupBox.add_actor(ballsRow);
-
             this._box.add_actor(groupBox);
             this._transient.push(groupBox);
         }
@@ -387,6 +371,7 @@ ClaudeAgentStateApplet.prototype = {
                 entry.ball.set_style(this._ballStyle(color));
             }
             entry.state = agent.state;
+            entry.lbl.set_text(this._projectName(agent));
 
             let prevState = this._prevStates[pid];
 
@@ -400,15 +385,16 @@ ClaudeAgentStateApplet.prototype = {
         let path = agent.project_root || agent.cwd;
         if (!path) return "?";
         let parts = path.split("/").filter(Boolean);
-        let name  = parts[parts.length - 1] || "?";
-        return name.length > LABEL_MAX ? name.slice(0, LABEL_MAX - 1) + "…" : name;
+        return parts[parts.length - 1] || "?";
     },
 
     _ballStyle: function(color) {
+        let h = this._ph;
+        let w = h * 2;
         return "background-color: " + color + ";"
-             + " width: " + BALL_SIZE + "px;"
-             + " height: " + BALL_SIZE + "px;"
-             + " border-radius: " + (BALL_SIZE / 2) + "px;"
+             + " width: " + w + "px;"
+             + " height: " + h + "px;"
+             + " border-radius: 2px;"
              + " margin: 0 " + BALL_MARGIN + "px;";
     },
 
