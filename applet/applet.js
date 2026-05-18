@@ -13,7 +13,7 @@ const UUID = "claude-agent-state@tommasnik";
 const STATE_FILE = "/tmp/claude-agents.json";
 const FALLBACK_MS = 3000;  // fallback poll if inotify misses something
 const BALL_MARGIN = 1;
-const LABEL_MAX = 12;
+const LABEL_H = 14;    // px height reserved for per-group project label
 
 const STATE_COLOR = {
     initialized:          "#888888",
@@ -271,16 +271,10 @@ ClaudeAgentStateApplet.prototype = {
             let pid   = String(agent.pid);
             if (!this._entries[pid]) {
                 let clickPid = pid;
-                let lbl = new St.Label({
-                    style: "color: rgba(255,255,255,0.9); font-size: 10px; font-weight: bold;",
-                });
-                lbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.MIDDLE);
-                lbl.clutter_text.set_single_line_mode(true);
                 let ball = new St.Bin({
                     reactive:    true,
                     track_hover: true,
                     style:       this._ballStyle(STATE_COLOR.initialized),
-                    child:       lbl,
                     x_fill:      true,
                     y_fill:      false,
                     x_align:     St.Align.MIDDLE,
@@ -293,7 +287,7 @@ ClaudeAgentStateApplet.prototype = {
                     return true;
                 }));
                 let tip = new AgentTooltip(ball);
-                this._entries[pid] = { ball: ball, lbl: lbl, tooltip: tip, color: STATE_COLOR.initialized, state: "initialized", inBox: false };
+                this._entries[pid] = { ball: ball, tooltip: tip, color: STATE_COLOR.initialized, state: "initialized", inBox: false };
             }
         }
 
@@ -347,13 +341,32 @@ ClaudeAgentStateApplet.prototype = {
             let gkey  = groupOrder[gi];
             let group = groupMap[gkey];
 
-            let groupBox = new St.BoxLayout({ vertical: false });
+            let n     = group.length;
+            let ballW = Math.max(this._ph, Math.floor(this._ph * 2 / n));
+            let ballH = this._ph - LABEL_H;
+
+            let groupBox = new St.BoxLayout({ vertical: true });
+
+            // One label for the whole group — full project name, no truncation
+            let groupLbl = new St.Label({
+                style: "color: rgba(255,255,255,0.85); font-size: 10px;"
+                     + " padding: 0 3px; text-align: center;"
+                     + " min-width: " + (n * ballW) + "px;",
+            });
+            groupLbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.NONE);
+            groupLbl.clutter_text.set_single_line_mode(true);
+            groupLbl.set_text(this._projectName(group[0]));
+            groupBox.add_actor(groupLbl);
+
+            let ballsRow = new St.BoxLayout({ vertical: false });
             for (let i = 0; i < group.length; i++) {
                 let pid   = String(group[i].pid);
                 let entry = this._entries[pid];
-                groupBox.add_actor(entry.ball);
+                ballsRow.add_actor(entry.ball);
                 entry.inBox = true;
             }
+            groupBox.add_actor(ballsRow);
+
             this._box.add_actor(groupBox);
             this._transient.push(groupBox);
         }
@@ -366,12 +379,13 @@ ClaudeAgentStateApplet.prototype = {
             let entry = this._entries[pid];
             let color = STATE_COLOR[agent.state] || "#888888";
 
-            if (entry.color !== color) {
-                entry.color = color;
-                entry.ball.set_style(this._ballStyle(color));
-            }
+            let gkey2     = agent.project_root || agent.cwd || "";
+            let groupSize = (groupMap[gkey2] || []).length || 1;
+            let ballW     = Math.max(this._ph, Math.floor(this._ph * 2 / groupSize));
+            let ballH     = this._ph - LABEL_H;
+            entry.ball.set_style(this._ballStyle(color, ballW, ballH));
+            entry.color = color;
             entry.state = agent.state;
-            entry.lbl.set_text(this._projectName(agent));
 
             let prevState = this._prevStates[pid];
 
@@ -388,9 +402,9 @@ ClaudeAgentStateApplet.prototype = {
         return parts[parts.length - 1] || "?";
     },
 
-    _ballStyle: function(color) {
-        let h = this._ph;
-        let w = h * 2;
+    _ballStyle: function(color, w, h) {
+        if (w === undefined) w = this._ph * 2;
+        if (h === undefined) h = this._ph;
         return "background-color: " + color + ";"
              + " width: " + w + "px;"
              + " height: " + h + "px;"
