@@ -155,6 +155,67 @@ class TestAgentEndpoint:
         with srv.agents_lock:
             assert "2012" in srv.agents, "working agent must survive /clear on same tty"
 
+    def test_clear_same_pid_preserves_window_id_when_new_session_sends_empty(self):
+        # First session establishes a working window_id
+        _post("/agent", {
+            "pid": 2020, "state": "initialized", "hook_event": "SessionStart",
+            "window_id": "0xdeadbeef", "tab_name": "cc-aaaaaaaa",
+            "tty": "/dev/pts/20", "session_id": "session-a",
+            "project_root": "/home/tom/code/myproject",
+        })
+        # /clear: Stop fires — same PID, state becomes done
+        _post("/agent", {"pid": 2020, "state": "done", "hook_event": "Stop", "tty": "/dev/pts/20"})
+        # SessionStart of new session — hook's get_window_id_for_pid transiently returns ""
+        _post("/agent", {
+            "pid": 2020, "state": "initialized", "hook_event": "SessionStart",
+            "window_id": "",           # get_window_id_for_pid failed
+            "tab_name": "cc-bbbbbbbb",
+            "tty": "/dev/pts/20", "session_id": "session-b",
+            "project_root": "/home/tom/code/myproject",
+        })
+        with srv.agents_lock:
+            a = srv.agents.get("2020", {})
+        assert a, "agent must still exist after /clear"
+        assert a["window_id"] == "0xdeadbeef", "window_id must survive when new SessionStart sends empty string"
+        assert a["tab_name"] == "cc-bbbbbbbb", "tab_name must be updated to new session value"
+        assert a["session_id"] == "session-b", "session_id must reflect new session"
+
+    def test_clear_same_pid_updates_window_id_when_hook_provides_new_value(self):
+        # First session
+        _post("/agent", {
+            "pid": 2021, "state": "initialized", "hook_event": "SessionStart",
+            "window_id": "0x00001111", "tab_name": "cc-aaaaaaaa",
+            "tty": "/dev/pts/21", "session_id": "session-a",
+        })
+        _post("/agent", {"pid": 2021, "state": "done", "hook_event": "Stop"})
+        # New session — hook successfully returns a new window_id
+        _post("/agent", {
+            "pid": 2021, "state": "initialized", "hook_event": "SessionStart",
+            "window_id": "0x00002222",  # hook returned a valid (possibly same) window
+            "tab_name": "cc-bbbbbbbb",
+            "tty": "/dev/pts/21", "session_id": "session-b",
+        })
+        with srv.agents_lock:
+            a = srv.agents.get("2021", {})
+        assert a["window_id"] == "0x00002222", "window_id must be updated when hook provides a non-empty value"
+
+    def test_clear_different_pid_old_agent_evicted_new_has_window_id(self):
+        # Old session on same TTY with a window_id
+        _post("/agent", {
+            "pid": 2022, "state": "done", "hook_event": "Stop",
+            "window_id": "0xdeadbeef", "tty": "/dev/pts/22", "session_id": "session-a",
+        })
+        # New session, new PID (Claude re-spawned)
+        _post("/agent", {
+            "pid": 2023, "state": "initialized", "hook_event": "SessionStart",
+            "window_id": "0xdeadbeef", "tab_name": "cc-cccccccc",
+            "tty": "/dev/pts/22", "session_id": "session-b",
+        })
+        with srv.agents_lock:
+            assert "2022" not in srv.agents, "old done agent on same tty must be evicted on new PID"
+            a = srv.agents.get("2023", {})
+        assert a["window_id"] == "0xdeadbeef"
+
 
 # ---------------------------------------------------------------------------
 # GET /status

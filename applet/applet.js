@@ -19,7 +19,7 @@ const STATE_COLOR = {
     working:              "#e8c000",
     asking_user:          "#4499ff",
     done:                 "#44bb44",
-    waiting_for_approval: "#ffaa00",
+    waiting_for_approval: "#ff2222",
 };
 
 const STATE_LABEL = {
@@ -273,7 +273,7 @@ ClaudeAgentStateApplet.prototype = {
                     if (event.get_button() === 1) {
                         let e = this._entries[clickPid];
                         this._focusAgent(clickPid);
-                        if (e && e.state === "done") this._resetAgent(clickPid);
+                        if (e && (e.state === "done" || e.state === "waiting_for_approval")) this._resetAgent(clickPid);
                     }
                     return true;
                 }));
@@ -348,7 +348,13 @@ ClaudeAgentStateApplet.prototype = {
                 track_hover: true,
             });
             lbl.connect("button-press-event", Lang.bind(this, function(actor, event) {
-                if (event.get_button() === 1) this._focusAgent(clickPid);
+                if (event.get_button() === 1) {
+                    this._focusAgent(clickPid);
+                    if (group.length === 1) {
+                        let e = this._entries[clickPid];
+                        if (e && (e.state === "done" || e.state === "waiting_for_approval")) this._resetAgent(clickPid);
+                    }
+                }
                 return true;
             }));
             groupBox.add_actor(lbl);

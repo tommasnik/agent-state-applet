@@ -86,8 +86,8 @@ class TestHookStateMapping:
     def test_stop_maps_to_done(self):
         assert hook.HOOK_STATE["Stop"] == "done"
 
-    def test_notification_maps_to_done(self):
-        assert hook.HOOK_STATE["Notification"] == "done"
+    def test_notification_maps_to_waiting_for_approval(self):
+        assert hook.HOOK_STATE["Notification"] == "waiting_for_approval"
 
     def test_ask_user_tools_override_pre_tool_use_to_asking_user(self):
         for tool in hook.ASK_USER_TOOLS:

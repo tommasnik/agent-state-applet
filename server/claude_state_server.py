@@ -226,6 +226,10 @@ class Handler(BaseHTTPRequestHandler):
                             del agents[old_pid]
 
                 existing = agents.get(pid, {})
+                # Notification fires after Stop — don't let it overwrite done state.
+                if state == "waiting_for_approval" and existing.get("state") == "done":
+                    self._respond(200, b'{"ok":true}')
+                    return
                 agents[pid] = {
                     "pid": int(pid),
                     "cwd": data.get("cwd", existing.get("cwd", "")),
@@ -236,9 +240,11 @@ class Handler(BaseHTTPRequestHandler):
                     "session_id": data.get("session_id", existing.get("session_id", "")),
                     "subagent_count": data.get("subagent_count", existing.get("subagent_count", 0)),
                     "started_at": existing.get("started_at", now),
-                    # window_id / tab_name are set once at UserPromptSubmit and preserved
-                    "window_id":    data.get("window_id",    existing.get("window_id",    "")),
-                    "tab_name":     data.get("tab_name",     existing.get("tab_name",     "")),
+                    # window_id / tab_name: only overwrite with a non-empty value so that
+                    # a /clear (SessionStart on same PID) never erases a working window_id
+                    # when get_window_id_for_pid transiently returns "".
+                    "window_id":    data.get("window_id")    or existing.get("window_id",    ""),
+                    "tab_name":     data.get("tab_name")     or existing.get("tab_name",     ""),
                     "tty":          data.get("tty",          existing.get("tty",          "")),
                     "project_root": data.get("project_root", existing.get("project_root", "")),
                     # ai_title is set by ai_title_poller and never overwritten from hook
@@ -295,25 +301,22 @@ class Handler(BaseHTTPRequestHandler):
                         window_id = w["xid"]
                         break
 
-            if not window_id:
-                self._respond(404, b'{"error":"no window"}')
-                return
+            if window_id:
+                # Switch to the window's desktop before focusing
+                try:
+                    target_xid = int(window_id, 16) if window_id.startswith("0x") else int(window_id)
+                except ValueError:
+                    target_xid = None
+                if target_xid:
+                    for w in windows:
+                        try:
+                            if int(w["xid"], 16) == target_xid:
+                                subprocess.run(["wmctrl", "-s", w["desktop"]], env=env, timeout=2)
+                                break
+                        except ValueError:
+                            pass
 
-            # Switch to the window's desktop before focusing
-            try:
-                target_xid = int(window_id, 16) if window_id.startswith("0x") else int(window_id)
-            except ValueError:
-                target_xid = None
-            if target_xid:
-                for w in windows:
-                    try:
-                        if int(w["xid"], 16) == target_xid:
-                            subprocess.run(["wmctrl", "-s", w["desktop"]], env=env, timeout=2)
-                            break
-                    except ValueError:
-                        pass
-
-            subprocess.Popen(["wmctrl", "-i", "-a", window_id], env=env)
+                subprocess.Popen(["wmctrl", "-i", "-a", window_id], env=env)
         except Exception:
             pass
 
