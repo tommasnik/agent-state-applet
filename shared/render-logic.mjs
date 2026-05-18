@@ -1,6 +1,7 @@
 // Pure rendering logic — no Cinnamon/GJS dependencies.
-// Keep in sync with the top-level functions in applet.js.
-// This file exists solely so Node.js tests can import it.
+// Imported directly by the GNOME extension (ESM) and the Node test runner.
+// The Cinnamon applet (no ESM support) keeps an inlined copy in applet.js
+// that must stay in sync with this file.
 
 export const BALL_MARGIN = 1;
 export const LABEL_H     = 14;

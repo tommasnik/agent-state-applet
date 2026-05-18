@@ -21,6 +21,7 @@ gnome:
 	mkdir -p "$(GNOME_EXT_DEST)"
 	cp gnome-extension/extension.js  "$(GNOME_EXT_DEST)/"
 	cp gnome-extension/metadata.json "$(GNOME_EXT_DEST)/"
+	cp shared/render-logic.mjs      "$(GNOME_EXT_DEST)/"
 	gnome-extensions disable "$(APPLET_UUID)" 2>/dev/null || true
 	sleep 0.3
 	gnome-extensions enable  "$(APPLET_UUID)"

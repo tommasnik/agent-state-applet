@@ -5,41 +5,25 @@ import St from 'gi://St';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import Clutter from 'gi://Clutter';
+import Pango from 'gi://Pango';
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
-const UUID       = 'claude-agent-state@tommasnik';
-const STATE_FILE = '/tmp/claude-agents.json';
+import {
+    describeRender,
+    ballStyle,
+    tooltipText,
+    STATE_COLOR,
+    LABEL_H,
+} from './render-logic.mjs';
+
+const UUID        = 'claude-agent-state@tommasnik';
+const STATE_FILE  = '/tmp/claude-agents.json';
 const FALLBACK_MS = 3000;
-const BALL_SIZE   = 16;
-const BALL_MARGIN = 2;
-const LABEL_MAX   = 12;
-
-const STATE_COLOR = {
-    initialized:          '#888888',
-    working:              '#e8c000',
-    asking_user:          '#4499ff',
-    done:                 '#44bb44',
-    waiting_for_approval: '#ffaa00',
-};
-
-const STATE_LABEL = {
-    initialized:          'Initialized',
-    working:              'Working',
-    asking_user:          'Asking user',
-    done:                 'Done',
-    waiting_for_approval: 'Waiting for approval',
-};
-
-function formatDuration(seconds) {
-    seconds = Math.max(0, Math.floor(seconds));
-    if (seconds < 60)   return seconds + 's';
-    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
-    return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
-}
+const DEFAULT_PH  = 32;  // fallback panel height if Main.panel.height not ready
 
 function readJSON(path) {
     try {
@@ -56,23 +40,26 @@ function readJSON(path) {
 }
 
 // ---------------------------------------------------------------------------
-// Tooltip — floats above the cursor so it stays on-screen on a top panel
+// Tooltip — Pango-markup rich tooltip, mirrors the Cinnamon applet.
+// Floats above the cursor; on a top panel it falls back to below.
 // ---------------------------------------------------------------------------
 class AgentTooltip {
     constructor(ball) {
-        this._text    = '';
+        this._markup  = '';
         this._visible = false;
         this._ball    = ball;
 
         this._actor = new St.Label({
-            style: 'background-color: rgba(20,20,20,0.93);'
+            style: 'background-color: rgba(18,18,22,0.96);'
                  + 'color: #e0e0e0;'
-                 + 'padding: 7px 10px;'
-                 + 'border-radius: 4px;'
-                 + 'font-size: 11px;',
+                 + 'padding: 12px 16px;'
+                 + 'border-radius: 6px;'
+                 + 'font-size: 13px;'
+                 + 'border: 1px solid rgba(255,255,255,0.08);',
         });
         this._actor.clutter_text.single_line_mode = false;
         this._actor.clutter_text.line_wrap = false;
+        this._actor.clutter_text.use_markup = true;
         this._actor.hide();
         Main.uiGroup.add_child(this._actor);
 
@@ -82,7 +69,7 @@ class AgentTooltip {
     }
 
     _onEnter() {
-        this._actor.set_text(this._text);
+        this._actor.clutter_text.set_markup(this._markup);
         this._actor.show();
         this._visible = true;
         this._reposition();
@@ -99,13 +86,15 @@ class AgentTooltip {
 
     _reposition() {
         let [mx, my] = global.get_pointer();
-        let aw = this._actor.width  || 220;
-        let ah = this._actor.height || 80;
-        let sw = global.screen_width || 1920;
+        let aw = this._actor.width  || 320;
+        let ah = this._actor.height || 120;
+        let sw = global.screen_width  || 1920;
+        let sh = global.screen_height || 1080;
 
-        // On a top panel push the tooltip below the cursor instead of above
-        let ty = my + 28;
-        if (ty + ah > (global.screen_height || 1080) - 8) ty = my - ah - 14;
+        // GNOME usually has a top panel — push tooltip below the cursor first.
+        let ty = my + 22;
+        if (ty + ah > sh - 8) ty = my - ah - 14;
+        if (ty < 4) ty = 4;
 
         let tx = mx + 10;
         if (tx + aw > sw - 8) tx = sw - aw - 8;
@@ -114,10 +103,10 @@ class AgentTooltip {
         this._actor.set_position(tx, ty);
     }
 
-    set_text(text) {
-        this._text = text;
+    set_text(markup) {
+        this._markup = markup;
         if (this._visible) {
-            this._actor.set_text(text);
+            this._actor.clutter_text.set_markup(markup);
             this._reposition();
         }
     }
@@ -142,14 +131,17 @@ class ClaudeIndicator extends PanelMenu.Button {
 
         this._box = new St.BoxLayout({ vertical: false });
         this.add_child(this._box);
-        this.set_style('padding: 0 4px;');
+        this.set_style('padding: 0;');
 
-        this._entries       = {};  // pid (str) → { ball, tooltip, color, state, inBox }
-        this._transient     = [];  // labels + separators rebuilt each tick
+        // pid (str) → { ball, tooltip, color, state, inBox }
+        this._entries       = {};
+        // labels + group containers + separators (rebuilt each tick)
+        this._transient     = [];
         this._prevStates    = {};
         this._pendingUpdate = null;
         this._timer         = null;
         this._fileMonitor   = null;
+        this._lastAgents    = {};
 
         this._setupFileMonitor();
         this._timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, FALLBACK_MS, () => {
@@ -205,21 +197,33 @@ class ClaudeIndicator extends PanelMenu.Button {
         ]);
     }
 
+    _panelHeight() {
+        let h = Main.panel ? Main.panel.height : 0;
+        return h && h > LABEL_H + 4 ? h : DEFAULT_PH;
+    }
+
     _update() {
         let data = readJSON(STATE_FILE);
         if (!data) return;
 
         let agents = data.agents || {};
-        let sorted = Object.values(agents).sort((a, b) => (a.started_at || 0) - (b.started_at || 0));
+        this._lastAgents = agents;
 
-        let livePids = {};
-        for (let a of sorted) livePids[String(a.pid)] = true;
+        let ph     = this._panelHeight();
+        let groups = describeRender(agents, ph);
 
         // Remove stale entries
+        let livePids = {};
+        for (let gi = 0; gi < groups.length; gi++)
+            for (let ai = 0; ai < groups[gi].agents.length; ai++)
+                livePids[groups[gi].agents[ai].pid] = true;
         for (let pid in this._entries) {
             if (!livePids[pid]) {
                 let e = this._entries[pid];
-                if (e.inBox) this._box.remove_child(e.ball);
+                if (e.inBox) {
+                    let parent = e.ball.get_parent();
+                    if (parent) parent.remove_child(e.ball);
+                }
                 e.tooltip.destroy();
                 e.ball.destroy();
                 delete this._entries[pid];
@@ -228,156 +232,107 @@ class ClaudeIndicator extends PanelMenu.Button {
         }
 
         // Create new ball widgets (persist across ticks)
-        for (let agent of sorted) {
-            let pid = String(agent.pid);
-            if (!this._entries[pid]) {
-                let ball = new St.Widget({
-                    reactive:    true,
-                    track_hover: true,
-                    style:       this._ballStyle(STATE_COLOR.initialized),
-                });
-                ball.connect('button-press-event', (actor, event) => {
-                    if (event.get_button() === 1) {
-                        let e = this._entries[pid];
-                        if (e && e.state === 'done') {
-                            this._resetAgent(pid);
-                        } else {
-                            this._focusAgent(pid);
-                        }
-                    }
-                    return Clutter.EVENT_STOP;
-                });
-                let tip = new AgentTooltip(ball);
-                this._entries[pid] = { ball, tooltip: tip, color: STATE_COLOR.initialized, state: 'initialized', inBox: false };
-            }
-        }
-
-        // Rebuild transient decorations (labels + separators)
-        this._transient.forEach(w => w.destroy());
-        this._transient = [];
-
-        // Group by project_root (fallback: cwd)
-        let groupOrder = [];
-        let groupMap   = {};
-        for (let agent of sorted) {
-            let gkey = agent.project_root || agent.cwd || '';
-            if (!groupMap[gkey]) { groupMap[gkey] = []; groupOrder.push(gkey); }
-            groupMap[gkey].push(agent);
-        }
-
-        // Build desired child sequence: [sep?, label, ball, ball, …]
-        let desired = [];
-        for (let gi = 0; gi < groupOrder.length; gi++) {
-            if (gi > 0) desired.push({ type: 'sep' });
-            let group    = groupMap[groupOrder[gi]];
-            let focusPid = String(group[0].pid);
-            for (let a of group) { if (a.window_id) { focusPid = String(a.pid); break; } }
-            desired.push({ type: 'label', text: this._projectName(group[0]), pid: focusPid });
-            for (let a of group) desired.push({ type: 'ball', pid: String(a.pid) });
-        }
-
-        // Only rebuild DOM when order/structure actually changed
-        let current     = this._box.get_children();
-        let needRebuild = current.length !== desired.length;
-        if (!needRebuild) {
-            for (let i = 0; i < desired.length; i++) {
-                let d = desired[i];
-                if (d.type === 'ball') {
-                    if (current[i] !== this._entries[d.pid].ball) { needRebuild = true; break; }
-                } else {
-                    needRebuild = true; break;
-                }
-            }
-        }
-
-        if (needRebuild) {
-            current.forEach(c => this._box.remove_child(c));
-            for (let pid in this._entries) this._entries[pid].inBox = false;
-
-            for (let d of desired) {
-                if (d.type === 'sep') {
-                    let sep = new St.Widget({ style: 'width: 1px; background-color: #555555; margin: 3px 5px;' });
-                    this._box.add_child(sep);
-                    this._transient.push(sep);
-                } else if (d.type === 'label') {
-                    let focusPid = d.pid;
-                    let lbl = new St.Label({
-                        text:        d.text,
-                        style:       'font-size: 10px; color: #aaaaaa; margin: 0 3px 0 0;',
+        for (let gi = 0; gi < groups.length; gi++) {
+            for (let ai = 0; ai < groups[gi].agents.length; ai++) {
+                let pid = groups[gi].agents[ai].pid;
+                if (!this._entries[pid]) {
+                    let clickPid = pid;
+                    let ball = new St.Widget({
                         reactive:    true,
                         track_hover: true,
+                        style:       ballStyle(STATE_COLOR.initialized, ph * 2, ph - LABEL_H),
                     });
-                    lbl.connect('button-press-event', (actor, event) => {
-                        if (event.get_button() === 1) this._focusAgent(focusPid);
+                    ball.connect('button-press-event', (actor, event) => {
+                        if (event.get_button() === 1) {
+                            let e = this._entries[clickPid];
+                            if (e && e.state === 'done') {
+                                this._resetAgent(clickPid);
+                            } else {
+                                this._focusAgent(clickPid);
+                            }
+                        }
                         return Clutter.EVENT_STOP;
                     });
-                    this._box.add_child(lbl);
-                    this._transient.push(lbl);
-                } else {
-                    let entry = this._entries[d.pid];
-                    this._box.add_child(entry.ball);
-                    entry.inBox = true;
+                    let tip = new AgentTooltip(ball);
+                    this._entries[pid] = {
+                        ball, tooltip: tip,
+                        color: STATE_COLOR.initialized,
+                        state: 'initialized',
+                        inBox: false,
+                    };
                 }
             }
-        } else {
-            for (let pid in this._entries) {
-                let e = this._entries[pid];
-                if (!e.inBox) { this._box.add_child(e.ball); e.inBox = true; }
-            }
         }
 
-        // Update colors and tooltips
+        // Detach all balls from their previous parents, then tear down transient containers.
+        for (let pid in this._entries) {
+            let entry  = this._entries[pid];
+            let parent = entry.ball.get_parent();
+            if (parent) parent.remove_child(entry.ball);
+            entry.inBox = false;
+        }
+        this._transient.forEach(w => w.destroy());
+        this._transient = [];
+        this._box.get_children().forEach(c => this._box.remove_child(c));
+
+        // Build one vertical block per group: project label on top, balls row below.
         let now = Date.now() / 1000;
-        for (let agent of sorted) {
-            let pid   = String(agent.pid);
-            let entry = this._entries[pid];
-            let color = STATE_COLOR[agent.state] || '#888888';
+        for (let gi = 0; gi < groups.length; gi++) {
+            let g = groups[gi];
 
-            if (entry.color !== color) {
-                entry.color = color;
-                entry.ball.set_style(this._ballStyle(color));
+            if (gi > 0) {
+                let sep = new St.Widget({
+                    style: 'width: 1px; background-color: rgba(255,255,255,0.18);'
+                         + ' height: ' + ph + 'px; margin: 0 2px;',
+                });
+                this._box.add_child(sep);
+                this._transient.push(sep);
             }
-            entry.state = agent.state;
-            this._prevStates[pid] = agent.state;
-            entry.tooltip.set_text(this._tooltipText(agent, now));
+
+            let groupBox = new St.BoxLayout({ vertical: true });
+
+            // Group label: pick a pid that has a window_id for click-to-focus
+            let focusPid = g.agents[0].pid;
+            for (let ai = 0; ai < g.agents.length; ai++) {
+                let a = agents[g.agents[ai].pid];
+                if (a && a.window_id) { focusPid = g.agents[ai].pid; break; }
+            }
+
+            let groupLbl = new St.Label({
+                style: 'color: rgba(255,255,255,0.85); font-size: 10px;'
+                     + ' padding: 0 3px; text-align: center;'
+                     + ' width: ' + (g.agents.length * g.ballW) + 'px;',
+                reactive:    true,
+                track_hover: true,
+            });
+            groupLbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.MIDDLE);
+            groupLbl.clutter_text.set_single_line_mode(true);
+            groupLbl.set_text(g.label);
+            let labelClickPid = focusPid;
+            groupLbl.connect('button-press-event', (actor, event) => {
+                if (event.get_button() === 1) this._focusAgent(labelClickPid);
+                return Clutter.EVENT_STOP;
+            });
+            groupBox.add_child(groupLbl);
+
+            let ballsRow = new St.BoxLayout({ vertical: false });
+            for (let ai = 0; ai < g.agents.length; ai++) {
+                let agentDesc = g.agents[ai];
+                let entry     = this._entries[agentDesc.pid];
+                entry.ball.set_style(ballStyle(agentDesc.color, g.ballW, g.ballH));
+                entry.color = agentDesc.color;
+                entry.state = agentDesc.state;
+                ballsRow.add_child(entry.ball);
+                entry.inBox = true;
+
+                entry.tooltip.set_text(tooltipText(agents[agentDesc.pid], now));
+                this._prevStates[agentDesc.pid] = agentDesc.state;
+            }
+            groupBox.add_child(ballsRow);
+
+            this._box.add_child(groupBox);
+            this._transient.push(groupBox);
         }
-    }
-
-    _projectName(agent) {
-        let path  = agent.project_root || agent.cwd;
-        if (!path) return '?';
-        let parts = path.split('/').filter(Boolean);
-        let name  = parts[parts.length - 1] || '?';
-        return name.length > LABEL_MAX ? name.slice(0, LABEL_MAX - 1) + '…' : name;
-    }
-
-    _ballStyle(color) {
-        return 'background-color: ' + color + ';'
-             + ' width: '         + BALL_SIZE + 'px;'
-             + ' height: '        + BALL_SIZE + 'px;'
-             + ' border-radius: ' + (BALL_SIZE / 2) + 'px;'
-             + ' margin: 0 '      + BALL_MARGIN + 'px;';
-    }
-
-    _tooltipText(agent, now) {
-        let project    = (agent.project_root || agent.cwd || '').split('/').filter(Boolean).pop() || 'unknown';
-        let stateLabel = STATE_LABEL[agent.state] || agent.state;
-        let toolInfo   = (agent.state === 'working' && agent.tool_name) ? ': ' + agent.tool_name : '';
-        let inState    = agent.timestamp  ? formatDuration(now - agent.timestamp)  : '-';
-        let running    = agent.started_at ? formatDuration(now - agent.started_at) : '-';
-
-        let lines = [
-            'Project:  ' + project,
-            'Path:     ' + (agent.cwd || '-'),
-            'State:    ' + stateLabel + toolInfo,
-            'Event:    ' + (agent.hook_event || '-'),
-            'Session:  ' + (agent.session_id ? agent.session_id.slice(0, 8) : '-'),
-            'In state: ' + inState,
-            'Running:  ' + running,
-            'PID:      ' + agent.pid,
-        ];
-        if (agent.subagent_count > 0) lines.push('Subagents: ' + agent.subagent_count);
-        return lines.join('\n');
     }
 
     _resetAgent(pid) {

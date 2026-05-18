@@ -71,6 +71,7 @@ else
     mkdir -p "$EXT_DEST"
     cp "$SCRIPT_DIR/gnome-extension/extension.js"  "$EXT_DEST/"
     cp "$SCRIPT_DIR/gnome-extension/metadata.json" "$EXT_DEST/"
+    cp "$SCRIPT_DIR/shared/render-logic.mjs"       "$EXT_DEST/"
     echo "[2/3] GNOME extension installed to $EXT_DEST"
 fi
 

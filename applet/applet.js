@@ -39,7 +39,8 @@ function formatDuration(seconds) {
 }
 
 // ---------------------------------------------------------------------------
-// Pure rendering functions — keep in sync with applet/render-logic.mjs
+// Pure rendering functions — keep in sync with shared/render-logic.mjs
+// (Cinnamon doesn't support ESM imports cleanly, so we inline.)
 // ---------------------------------------------------------------------------
 
 function projectName(agent) {
