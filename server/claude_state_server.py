@@ -343,7 +343,29 @@ class Handler(BaseHTTPRequestHandler):
         self._respond(200, b'{"ok":true}')
 
 
+BACKUP_FILE = STATE_FILE + ".bak"
+
+
+def _restore_state():
+    """Load agents from backup so focus works immediately after restart."""
+    for path in (BACKUP_FILE, STATE_FILE):
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            loaded = data.get("agents", {})
+            if not loaded:
+                continue
+            with agents_lock:
+                for pid, agent in loaded.items():
+                    agents[pid] = agent
+            write_state()
+            break
+        except (OSError, IOError, ValueError):
+            continue
+
+
 def main():
+    _restore_state()
     threading.Thread(target=pid_checker,     daemon=True).start()
     threading.Thread(target=ai_title_poller, daemon=True).start()
 
@@ -351,6 +373,12 @@ def main():
     print(f"Claude State Server on {HOST}:{PORT}", flush=True)
 
     def _shutdown(sig, frame):
+        # Back up state so the next startup can restore it, then clear the applet.
+        try:
+            import shutil
+            shutil.copy2(STATE_FILE, BACKUP_FILE)
+        except Exception:
+            pass
         try:
             os.unlink(STATE_FILE)
         except FileNotFoundError:
