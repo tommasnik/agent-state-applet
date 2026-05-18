@@ -87,11 +87,10 @@ def get_open_xids():
 def _encode_project_root(project_root):
     """Encode project_root to match Claude's JSONL directory naming convention.
 
-    Claude replaces '/' with '-' and strips the leading '-'.
-    Example: /home/tom/code/myproject -> -home-tom-code-myproject (leading - stripped)
+    Claude replaces '/' with '-', keeping the leading '-' from the root slash.
+    Example: /home/tom/code/myproject -> -home-tom-code-myproject
     """
-    encoded = project_root.replace("/", "-")
-    return encoded.lstrip("-")
+    return project_root.replace("/", "-")
 
 
 def _jsonl_path(project_root, session_id):

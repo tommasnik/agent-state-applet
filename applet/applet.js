@@ -56,19 +56,21 @@ function readJSON(path) {
 // bottom panel.  Uses Main.uiGroup so it floats over everything.
 // ---------------------------------------------------------------------------
 function AgentTooltip(ball) {
-    this._text    = "";
+    this._markup  = "";
     this._visible = false;
     this._ball    = ball;
 
     this._actor = new St.Label({
-        style: "background-color: rgba(20,20,20,0.93);"
+        style: "background-color: rgba(18,18,22,0.96);"
              + "color: #e0e0e0;"
-             + "padding: 7px 10px;"
-             + "border-radius: 4px;"
-             + "font-size: 11px;",
+             + "padding: 12px 16px;"
+             + "border-radius: 6px;"
+             + "font-size: 13px;"
+             + "border: 1px solid rgba(255,255,255,0.08);",
     });
     this._actor.clutter_text.single_line_mode = false;
     this._actor.clutter_text.line_wrap = false;
+    this._actor.clutter_text.use_markup = true;
     this._actor.hide();
     Main.uiGroup.add_actor(this._actor);
 
@@ -79,7 +81,7 @@ function AgentTooltip(ball) {
 
 AgentTooltip.prototype = {
     _onEnter: function() {
-        this._actor.set_text(this._text);
+        this._actor.clutter_text.set_markup(this._markup);
         this._actor.show();
         this._visible = true;
         this._reposition();
@@ -96,8 +98,8 @@ AgentTooltip.prototype = {
 
     _reposition: function() {
         let [mx, my] = global.get_pointer();
-        let aw = this._actor.width  || 220;
-        let ah = this._actor.height || 80;
+        let aw = this._actor.width  || 320;
+        let ah = this._actor.height || 120;
         let sw = global.screen_width  || 1920;
 
         let ty = my - ah - 14;
@@ -110,10 +112,10 @@ AgentTooltip.prototype = {
         this._actor.set_position(tx, ty);
     },
 
-    set_text: function(text) {
-        this._text = text;
+    set_text: function(markup) {
+        this._markup = markup;
         if (this._visible) {
-            this._actor.set_text(text);
+            this._actor.clutter_text.set_markup(markup);
             this._reposition();
         }
     },
@@ -415,23 +417,53 @@ ClaudeAgentStateApplet.prototype = {
     _tooltipText: function(agent, now) {
         let project    = (agent.project_root || agent.cwd || "").split("/").filter(Boolean).pop() || "unknown";
         let stateLabel = STATE_LABEL[agent.state] || agent.state;
+        let stateColor = STATE_COLOR[agent.state] || "#888888";
         let toolInfo   = (agent.state === "working" && agent.tool_name) ? ": " + agent.tool_name : "";
         let inState    = agent.timestamp  ? formatDuration(now - agent.timestamp)  : "-";
         let running    = agent.started_at ? formatDuration(now - agent.started_at) : "-";
 
+        function esc(s) {
+            return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+        let SEP = '<span color="#333344">────────────────────────────────</span>';
+
         let lines = [];
-        if (agent.ai_title) lines.push(agent.ai_title);
+
+        // AI title headline
+        if (agent.ai_title) {
+            lines.push('<span size="large" weight="bold">' + esc(agent.ai_title) + '</span>');
+            lines.push(SEP);
+        }
+
+        // Project name
+        lines.push('<span size="large" weight="bold" color="#ffffff">' + esc(project) + '</span>');
+
+        // State
+        lines.push('<span color="' + stateColor + '" weight="bold">● ' + esc(stateLabel + toolInfo) + '</span>');
+
+        lines.push(SEP);
+
+        // Time row
         lines.push(
-            "Project:  " + project,
-            "Path:     " + (agent.cwd || "-"),
-            "State:    " + stateLabel + toolInfo,
-            "Event:    " + (agent.hook_event || "-"),
-            "Session:  " + (agent.session_id ? agent.session_id.slice(0, 8) : "-"),
-            "In state: " + inState,
-            "Running:  " + running,
-            "PID:      " + agent.pid
+            '<span color="#888888">running </span><span weight="bold">' + running + '</span>'
+            + '   <span color="#888888">in state </span><span weight="bold">' + inState + '</span>'
         );
-        if (agent.subagent_count > 0) lines.push("Subagents: " + agent.subagent_count);
+
+        if (agent.subagent_count > 0) {
+            lines.push('<span color="#888888">subagents </span><span weight="bold">' + agent.subagent_count + '</span>');
+        }
+
+        lines.push(SEP);
+
+        // Technical details (smaller, dimmed)
+        lines.push('<span size="small" color="#666677">' + esc(agent.cwd || "-") + '</span>');
+        lines.push(
+            '<span size="small" color="#555566">session </span>'
+            + '<span size="small" color="#777788">' + esc(agent.session_id ? agent.session_id.slice(0, 8) : "-") + '</span>'
+            + '<span size="small" color="#555566">  pid </span>'
+            + '<span size="small" color="#777788">' + agent.pid + '</span>'
+        );
+
         return lines.join("\n");
     },
 
