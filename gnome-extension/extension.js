@@ -1,9 +1,15 @@
 'use strict';
 
-const { GObject, St, GLib, Gio, Clutter } = imports.gi;
-const Main      = imports.ui.main;
-const PanelMenu = imports.ui.panelMenu;
-const Util      = imports.misc.util;
+import GObject from 'gi://GObject';
+import St from 'gi://St';
+import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
+import Clutter from 'gi://Clutter';
+
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
 const UUID       = 'claude-agent-state@tommasnik';
 const STATE_FILE = '/tmp/claude-agents.json';
@@ -128,7 +134,7 @@ class AgentTooltip {
 // ---------------------------------------------------------------------------
 // Panel indicator
 // ---------------------------------------------------------------------------
-var ClaudeIndicator = GObject.registerClass(
+const ClaudeIndicator = GObject.registerClass(
 class ClaudeIndicator extends PanelMenu.Button {
     _init() {
         // true = no dropdown menu
@@ -413,20 +419,18 @@ class ClaudeIndicator extends PanelMenu.Button {
 });
 
 // ---------------------------------------------------------------------------
-// Extension lifecycle
+// Extension lifecycle (GNOME Shell 45+ ESM API)
 // ---------------------------------------------------------------------------
-let _indicator = null;
+export default class ClaudeAgentStateExtension extends Extension {
+    enable() {
+        this._indicator = new ClaudeIndicator();
+        Main.panel.addToStatusArea(UUID, this._indicator);
+    }
 
-function init() {}
-
-function enable() {
-    _indicator = new ClaudeIndicator();
-    Main.panel.addToStatusArea(UUID, _indicator);
-}
-
-function disable() {
-    if (_indicator) {
-        _indicator.destroy();
-        _indicator = null;
+    disable() {
+        if (this._indicator) {
+            this._indicator.destroy();
+            this._indicator = null;
+        }
     }
 }
