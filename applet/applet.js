@@ -38,6 +38,115 @@ function formatDuration(seconds) {
     return Math.floor(seconds / 3600) + "h " + Math.floor((seconds % 3600) / 60) + "m";
 }
 
+// ---------------------------------------------------------------------------
+// Pure rendering functions — keep in sync with applet/render-logic.mjs
+// ---------------------------------------------------------------------------
+
+function projectName(agent) {
+    let path = agent.project_root || agent.cwd;
+    if (!path) return "?";
+    let parts = path.split("/").filter(Boolean);
+    return parts[parts.length - 1] || "?";
+}
+
+function ballStyle(color, w, h) {
+    return "background-color: " + color + ";"
+         + " width: " + w + "px;"
+         + " height: " + h + "px;"
+         + " border-radius: 2px;"
+         + " margin: 0 " + BALL_MARGIN + "px;";
+}
+
+// Returns array of group descriptors from an agents dict (pid → agent object).
+// Groups are ordered by the earliest started_at in each group.
+// Each group: { key, label, ballW, ballH, agents: [{ pid, state, color }] }
+function describeRender(agents, panelHeight) {
+    let sorted = Object.values(agents).sort(function(a, b) {
+        return (a.started_at || 0) - (b.started_at || 0);
+    });
+
+    let groupOrder = [];
+    let groupMap   = {};
+    for (let i = 0; i < sorted.length; i++) {
+        let agent = sorted[i];
+        let gkey  = agent.project_root || agent.cwd || "";
+        if (!groupMap[gkey]) {
+            groupMap[gkey] = [];
+            groupOrder.push(gkey);
+        }
+        groupMap[gkey].push(agent);
+    }
+
+    let groups = [];
+    for (let gi = 0; gi < groupOrder.length; gi++) {
+        let gkey  = groupOrder[gi];
+        let group = groupMap[gkey];
+        let n     = group.length;
+        let ballW = Math.max(panelHeight, Math.floor(panelHeight * 2 / n));
+        let ballH = panelHeight - LABEL_H;
+        groups.push({
+            key:    gkey,
+            label:  projectName(group[0]),
+            ballW:  ballW,
+            ballH:  ballH,
+            agents: group.map(function(agent) {
+                return {
+                    pid:   String(agent.pid),
+                    state: agent.state,
+                    color: STATE_COLOR[agent.state] || "#888888",
+                };
+            }),
+        });
+    }
+    return groups;
+}
+
+function tooltipText(agent, now) {
+    let project    = (agent.project_root || agent.cwd || "").split("/").filter(Boolean).pop() || "unknown";
+    let stateLabel = STATE_LABEL[agent.state] || agent.state;
+    let stateColor = STATE_COLOR[agent.state] || "#888888";
+    let toolInfo   = (agent.state === "working" && agent.tool_name) ? ": " + agent.tool_name : "";
+    let inState    = agent.timestamp  ? formatDuration(now - agent.timestamp)  : "-";
+    let running    = agent.started_at ? formatDuration(now - agent.started_at) : "-";
+
+    function esc(s) {
+        return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    let SEP = '<span color="#333344">────────────────────────────────</span>';
+
+    let lines = [];
+
+    if (agent.ai_title) {
+        lines.push('<span size="large" weight="bold">' + esc(agent.ai_title) + '</span>');
+        lines.push(SEP);
+    }
+
+    lines.push('<span size="large" weight="bold" color="#ffffff">' + esc(project) + '</span>');
+    lines.push('<span color="' + stateColor + '" weight="bold">● ' + esc(stateLabel + toolInfo) + '</span>');
+    lines.push(SEP);
+    lines.push(
+        '<span color="#888888">running </span><span weight="bold">' + running + '</span>'
+        + '   <span color="#888888">in state </span><span weight="bold">' + inState + '</span>'
+    );
+
+    if (agent.subagent_count > 0) {
+        lines.push('<span color="#888888">subagents </span><span weight="bold">' + agent.subagent_count + '</span>');
+    }
+
+    lines.push(SEP);
+    lines.push('<span size="small" color="#666677">' + esc(agent.cwd || "-") + '</span>');
+    lines.push(
+        '<span size="small" color="#555566">session </span>'
+        + '<span size="small" color="#777788">' + esc(agent.session_id ? agent.session_id.slice(0, 8) : "-") + '</span>'
+        + '<span size="small" color="#555566">  pid </span>'
+        + '<span size="small" color="#777788">' + agent.pid + '</span>'
+    );
+
+    return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+
 function readJSON(path) {
     try {
         let file = Gio.File.new_for_path(path);
@@ -243,17 +352,14 @@ ClaudeAgentStateApplet.prototype = {
         let agents = data.agents || {};
         this._lastAgents = agents;
 
-        // Sort oldest first (leftmost in panel)
-        let sorted = Object.values(agents).sort(function(a, b) {
-            return (a.started_at || 0) - (b.started_at || 0);
-        });
-
-        let livePids = {};
-        for (let i = 0; i < sorted.length; i++) {
-            livePids[String(sorted[i].pid)] = true;
-        }
+        // Compute render layout (pure, no DOM side-effects)
+        let groups = describeRender(agents, this._ph);
 
         // Remove stale entries
+        let livePids = {};
+        for (let gi = 0; gi < groups.length; gi++)
+            for (let ai = 0; ai < groups[gi].agents.length; ai++)
+                livePids[groups[gi].agents[ai].pid] = true;
         for (let pid in this._entries) {
             if (!livePids[pid]) {
                 let e = this._entries[pid];
@@ -266,36 +372,31 @@ ClaudeAgentStateApplet.prototype = {
         }
 
         // Create new entries (balls stay alive across ticks)
-        for (let i = 0; i < sorted.length; i++) {
-            let agent = sorted[i];
-            let pid   = String(agent.pid);
-            if (!this._entries[pid]) {
-                let clickPid = pid;
-                let ball = new St.Bin({
-                    reactive:    true,
-                    track_hover: true,
-                    style:       this._ballStyle(STATE_COLOR.initialized),
-                    x_fill:      true,
-                    y_fill:      false,
-                    x_align:     St.Align.MIDDLE,
-                    y_align:     St.Align.MIDDLE,
-                });
-                ball.connect("button-press-event", Lang.bind(this, function(actor, event) {
-                    if (event.get_button() === 1) {
-                        this._focusAgent(clickPid);
-                    }
-                    return true;
-                }));
-                let tip = new AgentTooltip(ball);
-                this._entries[pid] = { ball: ball, tooltip: tip, color: STATE_COLOR.initialized, state: "initialized", inBox: false };
+        for (let gi = 0; gi < groups.length; gi++) {
+            for (let ai = 0; ai < groups[gi].agents.length; ai++) {
+                let pid = groups[gi].agents[ai].pid;
+                if (!this._entries[pid]) {
+                    let clickPid = pid;
+                    let ball = new St.Bin({
+                        reactive:    true,
+                        track_hover: true,
+                        style:       ballStyle(STATE_COLOR.initialized, this._ph * 2, this._ph - LABEL_H),
+                        x_fill:      true,
+                        y_fill:      false,
+                        x_align:     St.Align.MIDDLE,
+                        y_align:     St.Align.MIDDLE,
+                    });
+                    ball.connect("button-press-event", Lang.bind(this, function(actor, event) {
+                        if (event.get_button() === 1) {
+                            this._focusAgent(clickPid);
+                        }
+                        return true;
+                    }));
+                    let tip = new AgentTooltip(ball);
+                    this._entries[pid] = { ball: ball, tooltip: tip, color: STATE_COLOR.initialized, state: "initialized", inBox: false };
+                }
             }
         }
-
-        // Rebuild the box layout:
-        //   Each group gets a vertical block: project name on top, balls row below.
-        //   Balls are rescued from their current parents before transient teardown
-        //   so destroying the old group containers doesn't take the balls with them.
-        // -----------------------------------------------------------------------
 
         // Rescue balls from their current parent containers before teardown
         for (let pid in this._entries) {
@@ -314,21 +415,11 @@ ClaudeAgentStateApplet.prototype = {
             this._box.remove_actor(c);
         }));
 
-        // Group agents by project_root (fallback: cwd) — one group per IDE project
-        let groupOrder = [];
-        let groupMap   = {};
-        for (let i = 0; i < sorted.length; i++) {
-            let agent = sorted[i];
-            let gkey  = agent.project_root || agent.cwd || "";
-            if (!groupMap[gkey]) {
-                groupMap[gkey] = [];
-                groupOrder.push(gkey);
-            }
-            groupMap[gkey].push(agent);
-        }
+        // Build one horizontal block per group: project label on top, balls row below
+        let now = Date.now() / 1000;
+        for (let gi = 0; gi < groups.length; gi++) {
+            let g = groups[gi];
 
-        // Build one horizontal block per group: [■ ■ …] squares side by side
-        for (let gi = 0; gi < groupOrder.length; gi++) {
             if (gi > 0) {
                 let sep = new St.Widget({
                     style: "width: 1px; background-color: rgba(255,255,255,0.18);"
@@ -338,131 +429,36 @@ ClaudeAgentStateApplet.prototype = {
                 this._transient.push(sep);
             }
 
-            let gkey  = groupOrder[gi];
-            let group = groupMap[gkey];
-
-            let n     = group.length;
-            let ballW = Math.max(this._ph, Math.floor(this._ph * 2 / n));
-            let ballH = this._ph - LABEL_H;
-
             let groupBox = new St.BoxLayout({ vertical: true });
 
-            // One label for the whole group — full project name, no truncation
             let groupLbl = new St.Label({
                 style: "color: rgba(255,255,255,0.85); font-size: 10px;"
                      + " padding: 0 3px; text-align: center;"
-                     + " width: " + (n * ballW) + "px;",
+                     + " width: " + (g.agents.length * g.ballW) + "px;",
             });
             groupLbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.MIDDLE);
             groupLbl.clutter_text.set_single_line_mode(true);
-            groupLbl.set_text(this._projectName(group[0]));
+            groupLbl.set_text(g.label);
             groupBox.add_actor(groupLbl);
 
             let ballsRow = new St.BoxLayout({ vertical: false });
-            for (let i = 0; i < group.length; i++) {
-                let pid   = String(group[i].pid);
-                let entry = this._entries[pid];
+            for (let ai = 0; ai < g.agents.length; ai++) {
+                let agentDesc = g.agents[ai];
+                let entry     = this._entries[agentDesc.pid];
+                entry.ball.set_style(ballStyle(agentDesc.color, g.ballW, g.ballH));
+                entry.color = agentDesc.color;
+                entry.state = agentDesc.state;
                 ballsRow.add_actor(entry.ball);
                 entry.inBox = true;
+
+                entry.tooltip.set_text(tooltipText(agents[agentDesc.pid], now));
+                this._prevStates[agentDesc.pid] = agentDesc.state;
             }
             groupBox.add_actor(ballsRow);
 
             this._box.add_actor(groupBox);
             this._transient.push(groupBox);
         }
-
-        // Update ball styles, tooltips, and fire notifications for state transitions
-        let now = Date.now() / 1000;
-        for (let i = 0; i < sorted.length; i++) {
-            let agent = sorted[i];
-            let pid   = String(agent.pid);
-            let entry = this._entries[pid];
-            let color = STATE_COLOR[agent.state] || "#888888";
-
-            let gkey2     = agent.project_root || agent.cwd || "";
-            let groupSize = (groupMap[gkey2] || []).length || 1;
-            let ballW     = Math.max(this._ph, Math.floor(this._ph * 2 / groupSize));
-            let ballH     = this._ph - LABEL_H;
-            entry.ball.set_style(this._ballStyle(color, ballW, ballH));
-            entry.color = color;
-            entry.state = agent.state;
-
-            let prevState = this._prevStates[pid];
-
-            this._prevStates[pid] = agent.state;
-
-            entry.tooltip.set_text(this._tooltipText(agent, now));
-        }
-    },
-
-    _projectName: function(agent) {
-        let path = agent.project_root || agent.cwd;
-        if (!path) return "?";
-        let parts = path.split("/").filter(Boolean);
-        return parts[parts.length - 1] || "?";
-    },
-
-    _ballStyle: function(color, w, h) {
-        if (w === undefined) w = this._ph * 2;
-        if (h === undefined) h = this._ph;
-        return "background-color: " + color + ";"
-             + " width: " + w + "px;"
-             + " height: " + h + "px;"
-             + " border-radius: 2px;"
-             + " margin: 0 " + BALL_MARGIN + "px;";
-    },
-
-    _tooltipText: function(agent, now) {
-        let project    = (agent.project_root || agent.cwd || "").split("/").filter(Boolean).pop() || "unknown";
-        let stateLabel = STATE_LABEL[agent.state] || agent.state;
-        let stateColor = STATE_COLOR[agent.state] || "#888888";
-        let toolInfo   = (agent.state === "working" && agent.tool_name) ? ": " + agent.tool_name : "";
-        let inState    = agent.timestamp  ? formatDuration(now - agent.timestamp)  : "-";
-        let running    = agent.started_at ? formatDuration(now - agent.started_at) : "-";
-
-        function esc(s) {
-            return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        }
-        let SEP = '<span color="#333344">────────────────────────────────</span>';
-
-        let lines = [];
-
-        // AI title headline
-        if (agent.ai_title) {
-            lines.push('<span size="large" weight="bold">' + esc(agent.ai_title) + '</span>');
-            lines.push(SEP);
-        }
-
-        // Project name
-        lines.push('<span size="large" weight="bold" color="#ffffff">' + esc(project) + '</span>');
-
-        // State
-        lines.push('<span color="' + stateColor + '" weight="bold">● ' + esc(stateLabel + toolInfo) + '</span>');
-
-        lines.push(SEP);
-
-        // Time row
-        lines.push(
-            '<span color="#888888">running </span><span weight="bold">' + running + '</span>'
-            + '   <span color="#888888">in state </span><span weight="bold">' + inState + '</span>'
-        );
-
-        if (agent.subagent_count > 0) {
-            lines.push('<span color="#888888">subagents </span><span weight="bold">' + agent.subagent_count + '</span>');
-        }
-
-        lines.push(SEP);
-
-        // Technical details (smaller, dimmed)
-        lines.push('<span size="small" color="#666677">' + esc(agent.cwd || "-") + '</span>');
-        lines.push(
-            '<span size="small" color="#555566">session </span>'
-            + '<span size="small" color="#777788">' + esc(agent.session_id ? agent.session_id.slice(0, 8) : "-") + '</span>'
-            + '<span size="small" color="#555566">  pid </span>'
-            + '<span size="small" color="#777788">' + agent.pid + '</span>'
-        );
-
-        return lines.join("\n");
     },
 
     _focusAgent: function(pid) {

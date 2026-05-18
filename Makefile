@@ -2,7 +2,7 @@ APPLET_UUID   := claude-agent-state@tommasnik
 APPLET_DEST   := $(HOME)/.local/share/cinnamon/applets/$(APPLET_UUID)
 GNOME_EXT_DEST := $(HOME)/.local/share/gnome-shell/extensions/$(APPLET_UUID)
 
-.PHONY: reload applet gnome server test install install-gnome
+.PHONY: reload applet gnome server test test-server test-render install install-gnome
 
 # Cinnamon dev reload
 reload: applet server
@@ -30,8 +30,13 @@ server:
 	systemctl --user restart claude-state-server
 	@echo "server restarted (status: $$(systemctl --user is-active claude-state-server))"
 
-test:
+test: test-server test-render
+
+test-server:
 	python3 -m pytest server/tests/ -v
+
+test-render:
+	node --test test/render.test.mjs
 
 # First-time install — auto-detects DE, or pass target explicitly
 install:
