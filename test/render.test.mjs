@@ -9,7 +9,7 @@ import {
     STATE_COLOR,
     LABEL_H,
     BALL_MARGIN,
-} from "../shared/render-logic.mjs";
+} from "../shared/core.mjs";
 
 const PH = 40; // panel height used across tests
 

@@ -63,7 +63,11 @@ echo "[1/3] Service enabled and started ($(systemctl --user is-active $SERVICE_N
 if [[ "$DE" == "cinnamon" ]]; then
     APPLET_DEST="$HOME/.local/share/cinnamon/applets/$APPLET_UUID"
     mkdir -p "$APPLET_DEST"
+    # Build the Cinnamon-compatible shared core (strip `export` keywords)
+    sed -E 's/^export (function|class|const|let|var) /\1 /; s/^export default //' \
+        "$SCRIPT_DIR/shared/core.mjs" > "$SCRIPT_DIR/applet/core.js"
     cp "$SCRIPT_DIR/applet/applet.js"     "$APPLET_DEST/"
+    cp "$SCRIPT_DIR/applet/core.js"       "$APPLET_DEST/"
     cp "$SCRIPT_DIR/applet/metadata.json" "$APPLET_DEST/"
     echo "[2/3] Cinnamon applet installed to $APPLET_DEST"
 else
@@ -71,7 +75,7 @@ else
     mkdir -p "$EXT_DEST"
     cp "$SCRIPT_DIR/gnome-extension/extension.js"  "$EXT_DEST/"
     cp "$SCRIPT_DIR/gnome-extension/metadata.json" "$EXT_DEST/"
-    cp "$SCRIPT_DIR/shared/render-logic.mjs"       "$EXT_DEST/"
+    cp "$SCRIPT_DIR/shared/core.mjs"               "$EXT_DEST/"
     echo "[2/3] GNOME extension installed to $EXT_DEST"
 fi
 

@@ -1,248 +1,35 @@
-const Applet = imports.ui.applet;
-const St = imports.gi.St;
-const GLib = imports.gi.GLib;
-const Gio = imports.gi.Gio;
-const Clutter = imports.gi.Clutter;
-const Pango = imports.gi.Pango;
+// ---------------------------------------------------------------------------
+// Claude Agent State — Cinnamon adapter (loader)
+//
+// Thin wrapper that:
+//   1) imports Cinnamon/GJS legacy modules,
+//   2) loads the shared core (applet/core.js, generated from shared/core.mjs
+//      by the Makefile's sed transform),
+//   3) wires platform-specific host API + onClick semantics,
+//   4) attaches the indicator's `box` to this Applet's actor.
+//
+// All visual/feature logic lives in core. To change a behavior, edit
+// shared/core.mjs (the ESM source) — Cinnamon's copy is regenerated.
+// ---------------------------------------------------------------------------
+
+const Applet   = imports.ui.applet;
+const St       = imports.gi.St;
+const GLib     = imports.gi.GLib;
+const Gio      = imports.gi.Gio;
+const Clutter  = imports.gi.Clutter;
+const Pango    = imports.gi.Pango;
 const Mainloop = imports.mainloop;
-const Lang = imports.lang;
-const Util = imports.misc.util;
-const Main = imports.ui.main;
+const Lang     = imports.lang;
+const Util     = imports.misc.util;
+const Main     = imports.ui.main;
 
 const UUID = "claude-agent-state@tommasnik";
-const STATE_FILE = "/tmp/claude-agents.json";
-const FALLBACK_MS = 3000;  // fallback poll if inotify misses something
-const BALL_MARGIN = 1;
-const LABEL_H = 14;    // px height reserved for per-group project label
 
-const STATE_COLOR = {
-    initialized:          "#888888",
-    working:              "#e8c000",
-    asking_user:          "#4499ff",
-    done:                 "#44bb44",
-    waiting_for_approval: "#ff2222",
-};
+// Load shared core from this applet's directory.
+// AppletManager exposes every file in the applet dir under
+// `imports.ui.appletManager.applets[UUID].<basename-without-ext>`.
+const core = imports.ui.appletManager.applets[UUID].core;
 
-const STATE_LABEL = {
-    initialized:          "Initialized",
-    working:              "Working",
-    asking_user:          "Asking user",
-    done:                 "Done",
-    waiting_for_approval: "Waiting for approval",
-};
-
-function formatDuration(seconds) {
-    seconds = Math.max(0, Math.floor(seconds));
-    if (seconds < 60)   return seconds + "s";
-    if (seconds < 3600) return Math.floor(seconds / 60) + "m " + (seconds % 60) + "s";
-    return Math.floor(seconds / 3600) + "h " + Math.floor((seconds % 3600) / 60) + "m";
-}
-
-// ---------------------------------------------------------------------------
-// Pure rendering functions — keep in sync with shared/render-logic.mjs
-// (Cinnamon doesn't support ESM imports cleanly, so we inline.)
-// ---------------------------------------------------------------------------
-
-function projectName(agent) {
-    let path = agent.project_root || agent.cwd;
-    if (!path) return "?";
-    let parts = path.split("/").filter(Boolean);
-    return parts[parts.length - 1] || "?";
-}
-
-function ballStyle(color, w, h) {
-    return "background-color: " + color + ";"
-         + " width: " + w + "px;"
-         + " height: " + h + "px;"
-         + " border-radius: 2px;"
-         + " margin: 0 " + BALL_MARGIN + "px;";
-}
-
-// Returns array of group descriptors from an agents dict (pid → agent object).
-// Groups are ordered by the earliest started_at in each group.
-// Each group: { key, label, ballW, ballH, agents: [{ pid, state, color }] }
-function describeRender(agents, panelHeight) {
-    let sorted = Object.values(agents).sort(function(a, b) {
-        return (a.started_at || 0) - (b.started_at || 0);
-    });
-
-    let groupOrder = [];
-    let groupMap   = {};
-    for (let i = 0; i < sorted.length; i++) {
-        let agent = sorted[i];
-        let gkey  = agent.project_root || agent.cwd || "";
-        if (!groupMap[gkey]) {
-            groupMap[gkey] = [];
-            groupOrder.push(gkey);
-        }
-        groupMap[gkey].push(agent);
-    }
-
-    let groups = [];
-    for (let gi = 0; gi < groupOrder.length; gi++) {
-        let gkey  = groupOrder[gi];
-        let group = groupMap[gkey];
-        let n     = group.length;
-        let ballW = Math.max(panelHeight, Math.floor(panelHeight * 2 / n));
-        let ballH = panelHeight - LABEL_H;
-        groups.push({
-            key:    gkey,
-            label:  projectName(group[0]),
-            ballW:  ballW,
-            ballH:  ballH,
-            agents: group.map(function(agent) {
-                return {
-                    pid:   String(agent.pid),
-                    state: agent.state,
-                    color: STATE_COLOR[agent.state] || "#888888",
-                };
-            }),
-        });
-    }
-    return groups;
-}
-
-function tooltipText(agent, now) {
-    let project    = (agent.project_root || agent.cwd || "").split("/").filter(Boolean).pop() || "unknown";
-    let stateLabel = STATE_LABEL[agent.state] || agent.state;
-    let stateColor = STATE_COLOR[agent.state] || "#888888";
-    let toolInfo   = (agent.state === "working" && agent.tool_name) ? ": " + agent.tool_name : "";
-    let inState    = agent.timestamp  ? formatDuration(now - agent.timestamp)  : "-";
-    let running    = agent.started_at ? formatDuration(now - agent.started_at) : "-";
-
-    function esc(s) {
-        return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-    let SEP = '<span color="#333344">────────────────────────────────</span>';
-
-    let lines = [];
-
-    if (agent.ai_title) {
-        lines.push('<span size="large" weight="bold">' + esc(agent.ai_title) + '</span>');
-        lines.push(SEP);
-    }
-
-    lines.push('<span size="large" weight="bold" color="#ffffff">' + esc(project) + '</span>');
-    lines.push('<span color="' + stateColor + '" weight="bold">● ' + esc(stateLabel + toolInfo) + '</span>');
-    lines.push(SEP);
-    lines.push(
-        '<span color="#888888">running </span><span weight="bold">' + running + '</span>'
-        + '   <span color="#888888">in state </span><span weight="bold">' + inState + '</span>'
-    );
-
-    if (agent.subagent_count > 0) {
-        lines.push('<span color="#888888">subagents </span><span weight="bold">' + agent.subagent_count + '</span>');
-    }
-
-    lines.push(SEP);
-    lines.push('<span size="small" color="#666677">' + esc(agent.cwd || "-") + '</span>');
-    lines.push(
-        '<span size="small" color="#555566">session </span>'
-        + '<span size="small" color="#777788">' + esc(agent.session_id ? agent.session_id.slice(0, 8) : "-") + '</span>'
-        + '<span size="small" color="#555566">  pid </span>'
-        + '<span size="small" color="#777788">' + agent.pid + '</span>'
-    );
-
-    return lines.join("\n");
-}
-
-// ---------------------------------------------------------------------------
-
-function readJSON(path) {
-    try {
-        let file = Gio.File.new_for_path(path);
-        let [ok, contents] = file.load_contents(null);
-        if (!ok) return null;
-        let text = contents instanceof Uint8Array
-            ? new TextDecoder().decode(contents)
-            : contents.toString();
-        return JSON.parse(text);
-    } catch (_) {
-        return null;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Custom tooltip — positions ABOVE the cursor so it stays on-screen on a
-// bottom panel.  Uses Main.uiGroup so it floats over everything.
-// ---------------------------------------------------------------------------
-function AgentTooltip(ball) {
-    this._markup  = "";
-    this._visible = false;
-    this._ball    = ball;
-
-    this._actor = new St.Label({
-        style: "background-color: rgba(18,18,22,0.96);"
-             + "color: #e0e0e0;"
-             + "padding: 12px 16px;"
-             + "border-radius: 6px;"
-             + "font-size: 13px;"
-             + "border: 1px solid rgba(255,255,255,0.08);",
-    });
-    this._actor.clutter_text.single_line_mode = false;
-    this._actor.clutter_text.line_wrap = false;
-    this._actor.clutter_text.use_markup = true;
-    this._actor.hide();
-    Main.uiGroup.add_actor(this._actor);
-
-    this._enterSig  = ball.connect("enter-event",  Lang.bind(this, this._onEnter));
-    this._leaveSig  = ball.connect("leave-event",  Lang.bind(this, this._onLeave));
-    this._motionSig = ball.connect("motion-event", Lang.bind(this, this._onMotion));
-}
-
-AgentTooltip.prototype = {
-    _onEnter: function() {
-        this._actor.clutter_text.set_markup(this._markup);
-        this._actor.show();
-        this._visible = true;
-        this._reposition();
-    },
-
-    _onLeave: function() {
-        this._actor.hide();
-        this._visible = false;
-    },
-
-    _onMotion: function() {
-        if (this._visible) this._reposition();
-    },
-
-    _reposition: function() {
-        let [mx, my] = global.get_pointer();
-        let aw = this._actor.width  || 320;
-        let ah = this._actor.height || 120;
-        let sw = global.screen_width  || 1920;
-
-        let ty = my - ah - 14;
-        if (ty < 4) ty = my + 22;
-
-        let tx = mx + 10;
-        if (tx + aw > sw - 8) tx = sw - aw - 8;
-        if (tx < 4) tx = 4;
-
-        this._actor.set_position(tx, ty);
-    },
-
-    set_text: function(markup) {
-        this._markup = markup;
-        if (this._visible) {
-            this._actor.clutter_text.set_markup(markup);
-            this._reposition();
-        }
-    },
-
-    destroy: function() {
-        try { this._ball.disconnect(this._enterSig);  } catch (_) {}
-        try { this._ball.disconnect(this._leaveSig);  } catch (_) {}
-        try { this._ball.disconnect(this._motionSig); } catch (_) {}
-        this._actor.hide();
-        this._actor.destroy();
-    },
-};
-
-// ---------------------------------------------------------------------------
-// Applet
-// ---------------------------------------------------------------------------
 function ClaudeAgentStateApplet(metadata, orientation, panel_height, instance_id) {
     this._init(metadata, orientation, panel_height, instance_id);
 }
@@ -253,79 +40,49 @@ ClaudeAgentStateApplet.prototype = {
     _init: function(metadata, orientation, panel_height, instance_id) {
         Applet.Applet.prototype._init.call(this, orientation, panel_height, instance_id);
 
-        this._ph = panel_height;
-        this._box = new St.BoxLayout({ vertical: false });
-        this.actor.add_actor(this._box);
+        this._ph          = panel_height;
+        this._orientation = orientation;
+
+        let self = this;
+
+        this._indicator = core.createIndicator({
+            deps: { St: St, GLib: GLib, Gio: Gio, Clutter: Clutter, Pango: Pango, Main: Main },
+            host: {
+                spawn:          function(argv) { Util.spawn(argv); },
+                panelHeight:    function() { return self._ph; },
+                panelPosition:  function() { return self._panelPosition(); },
+                getPointer:     function() { return global.get_pointer(); },
+                screenSize:     function() { return [global.screen_width, global.screen_height]; },
+                getFocusedXid:  function() {
+                    try {
+                        let win = global.display.focus_window;
+                        if (win) return win.get_xwindow();
+                    } catch (_) {}
+                    return null;
+                },
+                getWindowActors: function() { return global.get_window_actors(); },
+            },
+            config:  {},   // future: feed from Settings.AppletSettings here
+            onClick: function(pid, agent, action) { self._onClick(pid, agent, action); },
+        });
+
+        this.actor.add_actor(this._indicator.box);
         this.actor.set_style("padding: 0;");
-
-        // pid (str) -> { ball, tooltip: AgentTooltip, color, state, inBox }
-        this._entries       = {};
-        // transient decorations (labels, separators) rebuilt each tick
-        this._transient     = [];
-        // pid -> last seen state (for transition detection)
-        this._prevStates    = {};
-        // pending debounced update timer id
-        this._pendingUpdate = null;
-        // last known agents data (pid -> agent) for focus/flash
-        this._lastAgents    = {};
-
-        // inotify: watch for changes to the state file (including atomic replace)
-        this._setupFileMonitor();
-
-        // Fallback poll in case inotify misses anything
-        this._timer = Mainloop.timeout_add(FALLBACK_MS, Lang.bind(this, this._tick));
-
-        // Initial read
-        this._update();
     },
 
-    _setupFileMonitor: function() {
-        try {
-            // Monitor the directory so atomic rename (os.replace) is caught reliably.
-            // GLib internally watches IN_MOVED_TO in the parent dir for file monitors,
-            // but directory monitoring is more explicit about it.
-            let dir = Gio.File.new_for_path("/tmp");
-            this._fileMonitor = dir.monitor_directory(Gio.FileMonitorFlags.NONE, null);
-            this._monitorSig  = this._fileMonitor.connect(
-                "changed", Lang.bind(this, this._onDirChanged)
-            );
-        } catch (_) {
-            this._fileMonitor = null;
-        }
+    _panelPosition: function() {
+        // Cinnamon orientation: St.Side.{TOP,BOTTOM,LEFT,RIGHT}
+        return (this._orientation === St.Side.TOP) ? "top" : "bottom";
     },
 
-    _onDirChanged: function(monitor, file, otherFile) {
-        // Filter to only the state file (including the tmp file being renamed)
-        let name      = file      ? file.get_basename()      : "";
-        let otherName = otherFile ? otherFile.get_basename() : "";
-        if (name !== "claude-agents.json" && otherName !== "claude-agents.json") return;
-
-        // Debounce: coalesce rapid events (write + rename) into one update
-        if (this._pendingUpdate) return;
-        this._pendingUpdate = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30,
-            Lang.bind(this, function() {
-                this._pendingUpdate = null;
-                this._update();
-                return GLib.SOURCE_REMOVE;
-            })
-        );
-    },
-
-    // Returns numeric X11 window ID of the currently focused window, or null.
-    _getFocusedXid: function() {
+    _agentWindowFocused: function(agent) {
+        if (!agent || !agent.window_id) return false;
+        let focusedXid;
         try {
             let win = global.display.focus_window;
-            if (win) return win.get_xwindow();
-        } catch (_) {}
-        return null;
-    },
-
-    // Returns true if the agent's IDE window is currently focused.
-    _agentWindowFocused: function(agent) {
-        if (!agent.window_id) return false;
-        let focusedXid = this._getFocusedXid();
+            focusedXid = win ? win.get_xwindow() : null;
+        } catch (_) { focusedXid = null; }
         if (focusedXid === null) return false;
-        // window_id may be hex ("0x...") or decimal — Number() handles both
         return focusedXid === Number(agent.window_id);
     },
 
@@ -340,130 +97,27 @@ ClaudeAgentStateApplet.prototype = {
         ]);
     },
 
-    _tick: function() {
-        this._update();
-        return GLib.SOURCE_CONTINUE;
+    _onClick: function(pid, agent, action) {
+        if (action === "reset") {
+            this._resetAgent(pid);
+        } else {
+            this._focusAgent(pid);
+        }
     },
 
-    _update: function() {
-        let data = readJSON(STATE_FILE);
-        // On read failure keep whatever is currently displayed — don't clear balls.
-        if (!data) return;
-
-        let agents = data.agents || {};
-        this._lastAgents = agents;
-
-        // Compute render layout (pure, no DOM side-effects)
-        let groups = describeRender(agents, this._ph);
-
-        // Remove stale entries
-        let livePids = {};
-        for (let gi = 0; gi < groups.length; gi++)
-            for (let ai = 0; ai < groups[gi].agents.length; ai++)
-                livePids[groups[gi].agents[ai].pid] = true;
-        for (let pid in this._entries) {
-            if (!livePids[pid]) {
-                let e = this._entries[pid];
-                if (e.inBox) this._box.remove_actor(e.ball);
-                e.tooltip.destroy();
-                e.ball.destroy();
-                delete this._entries[pid];
-                delete this._prevStates[pid];
-            }
-        }
-
-        // Create new entries (balls stay alive across ticks)
-        for (let gi = 0; gi < groups.length; gi++) {
-            for (let ai = 0; ai < groups[gi].agents.length; ai++) {
-                let pid = groups[gi].agents[ai].pid;
-                if (!this._entries[pid]) {
-                    let clickPid = pid;
-                    let ball = new St.Bin({
-                        reactive:    true,
-                        track_hover: true,
-                        style:       ballStyle(STATE_COLOR.initialized, this._ph * 2, this._ph - LABEL_H),
-                        x_fill:      true,
-                        y_fill:      false,
-                        x_align:     St.Align.MIDDLE,
-                        y_align:     St.Align.MIDDLE,
-                    });
-                    ball.connect("button-press-event", Lang.bind(this, function(actor, event) {
-                        if (event.get_button() === 1) {
-                            this._focusAgent(clickPid);
-                        }
-                        return true;
-                    }));
-                    let tip = new AgentTooltip(ball);
-                    this._entries[pid] = { ball: ball, tooltip: tip, color: STATE_COLOR.initialized, state: "initialized", inBox: false };
-                }
-            }
-        }
-
-        // Rescue balls from their current parent containers before teardown
-        for (let pid in this._entries) {
-            let entry = this._entries[pid];
-            let parent = entry.ball.get_parent();
-            if (parent) parent.remove_actor(entry.ball);
-            entry.inBox = false;
-        }
-
-        // Tear down transient decorations (group boxes, labels, separators)
-        this._transient.forEach(function(w) { w.destroy(); });
-        this._transient = [];
-
-        // Remove any remaining children from main box
-        this._box.get_children().forEach(Lang.bind(this, function(c) {
-            this._box.remove_actor(c);
-        }));
-
-        // Build one horizontal block per group: project label on top, balls row below
-        let now = Date.now() / 1000;
-        for (let gi = 0; gi < groups.length; gi++) {
-            let g = groups[gi];
-
-            if (gi > 0) {
-                let sep = new St.Widget({
-                    style: "width: 1px; background-color: rgba(255,255,255,0.18);"
-                         + " height: " + this._ph + "px; margin: 0 2px;",
-                });
-                this._box.add_actor(sep);
-                this._transient.push(sep);
-            }
-
-            let groupBox = new St.BoxLayout({ vertical: true });
-
-            let groupLbl = new St.Label({
-                style: "color: rgba(255,255,255,0.85); font-size: 10px;"
-                     + " padding: 0 3px; text-align: center;"
-                     + " width: " + (g.agents.length * g.ballW) + "px;",
-            });
-            groupLbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.MIDDLE);
-            groupLbl.clutter_text.set_single_line_mode(true);
-            groupLbl.set_text(g.label);
-            groupBox.add_actor(groupLbl);
-
-            let ballsRow = new St.BoxLayout({ vertical: false });
-            for (let ai = 0; ai < g.agents.length; ai++) {
-                let agentDesc = g.agents[ai];
-                let entry     = this._entries[agentDesc.pid];
-                entry.ball.set_style(ballStyle(agentDesc.color, g.ballW, g.ballH));
-                entry.color = agentDesc.color;
-                entry.state = agentDesc.state;
-                ballsRow.add_actor(entry.ball);
-                entry.inBox = true;
-
-                entry.tooltip.set_text(tooltipText(agents[agentDesc.pid], now));
-                this._prevStates[agentDesc.pid] = agentDesc.state;
-            }
-            groupBox.add_actor(ballsRow);
-
-            this._box.add_actor(groupBox);
-            this._transient.push(groupBox);
-        }
+    _resetAgent: function(pid) {
+        let body = JSON.stringify({ pid: parseInt(pid, 10), state: "initialized" });
+        Util.spawn([
+            "curl", "-s", "-X", "POST",
+            "http://127.0.0.1:7855/agent",
+            "-H", "Content-Type: application/json",
+            "-d", body,
+        ]);
     },
 
     _focusAgent: function(pid) {
         let body = JSON.stringify({ pid: parseInt(pid, 10) });
+        let self = this;
         let proc = new Gio.Subprocess({
             argv: [
                 "curl", "-s", "-X", "POST",
@@ -475,97 +129,28 @@ ClaudeAgentStateApplet.prototype = {
         });
         try { proc.init(null); } catch (_) { return; }
 
-        // Read response so we get the server-resolved window_id for flashing.
-        // The server may resolve a different (fresher) window_id via project-name
-        // matching; using the stale cached value would flash the wrong window.
-        proc.communicate_utf8_async(null, null, Lang.bind(this, function(p, res) {
+        // Read response so we can flash the (possibly server-resolved) window.
+        proc.communicate_utf8_async(null, null, function(p, res) {
             let windowId = null;
             try {
                 let [, stdout] = p.communicate_utf8_finish(res);
                 let data = JSON.parse(stdout || "{}");
                 windowId = data.window_id || null;
             } catch (_) {}
-            if (!windowId) {
-                let agent = this._lastAgents[pid];
-                windowId = agent ? (agent.window_id || null) : null;
-            }
             if (windowId) {
-                // Delay slightly so wmctrl has time to switch workspace and raise the window
-                Mainloop.timeout_add(300, Lang.bind(this, function() {
-                    this._flashWindow(windowId);
+                Mainloop.timeout_add(300, function() {
+                    self._indicator.flashWindow(windowId);
                     return false;
-                }));
+                });
             }
-        }));
-    },
-
-    _flashWindow: function(windowId) {
-        if (!windowId) return;
-        let targetXid;
-        try {
-            targetXid = windowId.startsWith("0x")
-                ? parseInt(windowId, 16)
-                : parseInt(windowId, 10);
-        } catch(_) { return; }
-        if (!targetXid) return;
-
-        let actors = global.get_window_actors();
-        for (let i = 0; i < actors.length; i++) {
-            let actor = actors[i];
-            let metaWin = actor.get_meta_window();
-            if (!metaWin || !metaWin.get_xwindow) continue;
-            if (metaWin.get_xwindow() !== targetXid) continue;
-
-            let W = actor.width;
-            let H = actor.height;
-            let T = 6; // border thickness px
-            let borders = [
-                { x: 0,     y: 0,     width: W, height: T }, // top
-                { x: 0,     y: H - T, width: W, height: T }, // bottom
-                { x: 0,     y: 0,     width: T, height: H }, // left
-                { x: W - T, y: 0,     width: T, height: H }, // right
-            ];
-            let color = new Clutter.Color({ red: 255, green: 140, blue: 0, alpha: 220 });
-            borders.forEach(function(r) {
-                let strip = new Clutter.Actor({
-                    background_color: color,
-                    x: r.x, y: r.y, width: r.width, height: r.height,
-                    reactive: false,
-                });
-                actor.add_actor(strip);
-                strip.ease({
-                    opacity: 0,
-                    duration: 700,
-                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                    onComplete: function() { strip.destroy(); },
-                });
-            });
-            break;
-        }
+        });
     },
 
     on_applet_removed_from_panel: function() {
-        if (this._timer) {
-            Mainloop.source_remove(this._timer);
-            this._timer = null;
+        if (this._indicator) {
+            this._indicator.destroy();
+            this._indicator = null;
         }
-        if (this._pendingUpdate) {
-            GLib.source_remove(this._pendingUpdate);
-            this._pendingUpdate = null;
-        }
-        if (this._fileMonitor) {
-            try { this._fileMonitor.disconnect(this._monitorSig); } catch (_) {}
-            this._fileMonitor.cancel();
-            this._fileMonitor = null;
-        }
-        this._transient.forEach(function(w) { w.destroy(); });
-        this._transient = [];
-        for (let pid in this._entries) {
-            let e = this._entries[pid];
-            e.tooltip.destroy();
-            e.ball.destroy();
-        }
-        this._entries = {};
     },
 };
 

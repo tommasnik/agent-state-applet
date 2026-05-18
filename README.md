@@ -27,13 +27,53 @@ Works on **Cinnamon** and **GNOME** (X11 and Wayland).
 
 ## Requirements
 
-- Linux with **Cinnamon** or **GNOME** desktop
-- [Claude Code](https://claude.ai/code) CLI
-- Python 3.8+
-- `wmctrl` and `libnotify-bin`
+### Runtime
+
+| What                   | Why                                                          |
+|------------------------|--------------------------------------------------------------|
+| Linux desktop          | **Cinnamon 4+** or **GNOME Shell 45+** (X11 or Wayland)      |
+| [Claude Code](https://claude.ai/code) CLI | Source of the hook events                  |
+| Python 3.8+            | Hook script + state server (`stdlib` only, no pip packages)  |
+| `wmctrl`               | Resolve / focus IDE windows                                  |
+| `libnotify-bin`        | `notify-send` for state-change notifications                 |
+| `curl`                 | Adapters POST to the local server via curl                   |
+| `systemd` (user)       | Runs `claude-state-server.service`                           |
+
+Debian / Ubuntu / Mint:
 
 ```bash
-sudo apt install wmctrl libnotify-bin
+sudo apt install python3 wmctrl libnotify-bin curl
+```
+
+Fedora:
+
+```bash
+sudo dnf install python3 wmctrl libnotify curl
+```
+
+Arch:
+
+```bash
+sudo pacman -S python wmctrl libnotify curl
+```
+
+### Development / tests
+
+Only needed if you want to run `make test` or hack on the code.
+
+| What             | Why                                                              |
+|------------------|------------------------------------------------------------------|
+| `make`           | Build / reload / test orchestration                              |
+| `sed`            | Generates `applet/core.js` from `shared/core.mjs` (Cinnamon path) |
+| Node.js ≥ 18     | Runs JS unit tests (`node --test`)                               |
+| `python3-pytest` | Runs server tests (`make test-server`)                           |
+| `gdbus`          | Reloads the Cinnamon applet without restarting Cinnamon (in `glib2`) |
+| `gnome-extensions` CLI | Enables/disables the GNOME extension (in `gnome-shell-common`) |
+
+Debian / Ubuntu / Mint:
+
+```bash
+sudo apt install make nodejs python3-pytest libglib2.0-bin gnome-shell-common
 ```
 
 ---

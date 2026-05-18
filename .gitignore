@@ -5,3 +5,5 @@ idea-plugin/build/
 idea-plugin/.gradle/
 idea-plugin/local.properties
 .idea/
+# Generated for Cinnamon by `make applet/core.js` (sed transform of shared/core.mjs)
+applet/core.js
