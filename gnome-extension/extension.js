@@ -5,7 +5,7 @@ const Main      = imports.ui.main;
 const PanelMenu = imports.ui.panelMenu;
 const Util      = imports.misc.util;
 
-const UUID       = 'claude-agent-state@daktela';
+const UUID       = 'claude-agent-state@tommasnik';
 const STATE_FILE = '/tmp/claude-agents.json';
 const FALLBACK_MS = 3000;
 const BALL_SIZE   = 16;

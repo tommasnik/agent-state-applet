@@ -40,7 +40,7 @@ Data flow:
 Implemented AI-generated session title display in the agent state applet.
 
 **Server (`server/claude_state_server.py`)**:
-- Added `_encode_project_root()` helper that converts `/home/tom/code/proj` → `home-tom-code-proj` (matching Claude's JSONL directory naming)
+- Added `_encode_project_root()` helper that converts `/home/user/code/proj` → `home-user-code-proj` (matching Claude's JSONL directory naming)
 - Added `_jsonl_path(project_root, session_id)` to construct the JSONL file path under `~/.claude/projects/`
 - Added `_read_ai_title(path)` to parse JSONL lines and extract the first `{"type":"ai-title","aiTitle":"..."}` entry
 - Added `ai_title_poller()` background thread that polls every 3s, scanning agents that have `session_id` and `project_root` but no `ai_title` yet

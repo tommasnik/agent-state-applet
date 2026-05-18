@@ -10,7 +10,7 @@ Color reference:
   YELLOW = working              (agent is active: thinking, calling tools, writing response)
   BLUE   = asking_user          (agent used AskUserQuestion — waiting for typed input)
   GREEN  = done                 (turn finished — waiting for next user message)
-  ORANGE = waiting_for_approval (notification fired — needs human attention / approval)
+  RED    = waiting_for_approval (notification fired — needs human attention / approval)
 """
 
 # ---------------------------------------------------------------------------
@@ -21,14 +21,14 @@ GRAY   = "#888888"
 YELLOW = "#e8c000"
 BLUE   = "#4499ff"
 GREEN  = "#44bb44"
-ORANGE = "#ffaa00"
+RED    = "#ff2222"
 
 _COLOR_NAME = {
     GRAY:   "gray/initialized",
     YELLOW: "yellow/working",
     BLUE:   "blue/asking_user",
     GREEN:  "green/done",
-    ORANGE: "orange/waiting_for_approval",
+    RED:    "red/waiting_for_approval",
 }
 
 HOOK_TO_STATE = {
@@ -46,7 +46,7 @@ STATE_TO_COLOR = {
     "working":              YELLOW,
     "asking_user":          BLUE,
     "done":                 GREEN,
-    "waiting_for_approval": ORANGE,
+    "waiting_for_approval": RED,
 }
 
 
@@ -207,24 +207,24 @@ class TestAskingUser:
 # Scenario 4: approval / notification
 #
 #   Notification fires (e.g. agent surfaced a dangerous command)
-#   └─ waiting for human to act                       ORANGE
+#   └─ waiting for human to act                       RED
 #   Stop fires
 #   └─ done                                           GREEN
 # ---------------------------------------------------------------------------
 class TestApproval:
 
-    def test_notification_shows_orange(self):
+    def test_notification_shows_red(self):
         (given()
             .whenUserSubmitsMessageTheColorIs(YELLOW)
             .whenAgentCallsToolTheColorIs(YELLOW)
-            .whenApprovalNeededTheColorIs(ORANGE)
+            .whenApprovalNeededTheColorIs(RED)
             .whenAgentFinishesTurnTheColorIs(GREEN))
 
     def test_notification_is_not_done(self):
         s = given()
         s._fire("Notification")
-        assert STATE_TO_COLOR[s.state] == ORANGE
-        assert STATE_TO_COLOR[s.state] != GREEN,   "orange ≠ green: agent hasn't finished yet"
+        assert STATE_TO_COLOR[s.state] == RED
+        assert STATE_TO_COLOR[s.state] != GREEN,   "red ≠ green: agent hasn't finished yet"
 
 
 # ---------------------------------------------------------------------------

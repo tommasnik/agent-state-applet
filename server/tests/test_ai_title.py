@@ -20,16 +20,15 @@ import claude_state_server as srv
 
 class TestEncodeProjectRoot:
     def test_simple_path(self):
-        assert srv._encode_project_root("/home/tom/code/myproject") == "home-tom-code-myproject"
+        assert srv._encode_project_root("/home/user/code/myproject") == "-home-user-code-myproject"
 
     def test_already_no_leading_slash(self):
         # If for some reason project_root doesn't start with '/', still works
         assert srv._encode_project_root("home/tom/myproject") == "home-tom-myproject"
 
     def test_trailing_slash_stripped(self):
-        # Trailing '-' is NOT stripped (only leading), so trailing slash becomes trailing '-'
-        encoded = srv._encode_project_root("/home/tom/code/myproject/")
-        assert encoded == "home-tom-code-myproject-"
+        encoded = srv._encode_project_root("/home/user/code/myproject/")
+        assert encoded == "-home-user-code-myproject-"
 
     def test_matches_real_claude_dirs(self):
         # Verify encoding matches the actual directory names on disk
@@ -37,19 +36,17 @@ class TestEncodeProjectRoot:
         if not os.path.isdir(projects_dir):
             pytest.skip("~/.claude/projects not found")
         for entry in os.listdir(projects_dir)[:5]:
-            # Each dir name has a leading '-' in the real filesystem,
-            # but our encode strips the leading '-'.
-            # The real dirs are like "-home-tom-code-foo" -> encode("/home/tom/code/foo") = "home-tom-code-foo"
-            # So if we add a leading '-' back to our encoded result, it should match the dir name.
+            # Real dirs are named "-home-user-code-foo" (leading dash from root slash).
+            # encode("/home/user/code/foo") == "-home-user-code-foo" matches directly.
             pass  # structural check only; real validation done via _jsonl_path
 
 
 class TestJsonlPath:
     def test_path_construction(self):
-        path = srv._jsonl_path("/home/tom/code/myproject", "abc123")
+        path = srv._jsonl_path("/home/user/code/myproject", "abc123")
         expected_dir = os.path.join(
             os.path.expanduser("~/.claude/projects"),
-            "home-tom-code-myproject",
+            "-home-user-code-myproject",
         )
         assert path == os.path.join(expected_dir, "abc123.jsonl")
 

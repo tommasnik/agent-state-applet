@@ -7,7 +7,7 @@ const Lang = imports.lang;
 const Util = imports.misc.util;
 const Main = imports.ui.main;
 
-const UUID = "claude-agent-state@daktela";
+const UUID = "claude-agent-state@tommasnik";
 const STATE_FILE = "/tmp/claude-agents.json";
 const FALLBACK_MS = 3000;  // fallback poll if inotify misses something
 const BALL_SIZE = 16;

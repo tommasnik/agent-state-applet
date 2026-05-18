@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APPLET_UUID="claude-agent-state@daktela"
+APPLET_UUID="claude-agent-state@tommasnik"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_SCRIPT="$SCRIPT_DIR/server/claude_state_server.py"
 SERVICE_DIR="$HOME/.config/systemd/user"

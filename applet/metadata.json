@@ -1,5 +1,5 @@
 {
-    "uuid": "claude-agent-state@daktela",
+    "uuid": "claude-agent-state@tommasnik",
     "name": "Claude Agent State",
     "description": "Live status of running Claude Code agents",
     "version": "1.0.0",

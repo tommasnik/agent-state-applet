@@ -88,7 +88,7 @@ def _encode_project_root(project_root):
     """Encode project_root to match Claude's JSONL directory naming convention.
 
     Claude replaces '/' with '-', keeping the leading '-' from the root slash.
-    Example: /home/tom/code/myproject -> -home-tom-code-myproject
+    Example: /home/user/code/myproject -> -home-user-code-myproject
     """
     return project_root.replace("/", "-")
 

@@ -64,7 +64,7 @@ POST /agent payload fields:
 
 **Applet** (`applet.js`) — run `make applet` (copies the file + reloads via D-Bus). Underlying command:
 ```
-gdbus call --session --dest org.Cinnamon --object-path /org/Cinnamon --method org.Cinnamon.ReloadXlet "claude-agent-state@daktela" "APPLET"
+gdbus call --session --dest org.Cinnamon --object-path /org/Cinnamon --method org.Cinnamon.ReloadXlet "claude-agent-state@tommasnik" "APPLET"
 ```
 Note: `dbus-send` does NOT work for this — use `gdbus call`.
 

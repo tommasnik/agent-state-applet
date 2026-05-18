@@ -161,7 +161,7 @@ class TestAgentEndpoint:
             "pid": 2020, "state": "initialized", "hook_event": "SessionStart",
             "window_id": "0xdeadbeef", "tab_name": "cc-aaaaaaaa",
             "tty": "/dev/pts/20", "session_id": "session-a",
-            "project_root": "/home/tom/code/myproject",
+            "project_root": "/home/user/code/myproject",
         })
         # /clear: Stop fires — same PID, state becomes done
         _post("/agent", {"pid": 2020, "state": "done", "hook_event": "Stop", "tty": "/dev/pts/20"})
@@ -171,7 +171,7 @@ class TestAgentEndpoint:
             "window_id": "",           # get_window_id_for_pid failed
             "tab_name": "cc-bbbbbbbb",
             "tty": "/dev/pts/20", "session_id": "session-b",
-            "project_root": "/home/tom/code/myproject",
+            "project_root": "/home/user/code/myproject",
         })
         with srv.agents_lock:
             a = srv.agents.get("2020", {})

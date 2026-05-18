@@ -1,4 +1,4 @@
-APPLET_UUID   := claude-agent-state@daktela
+APPLET_UUID   := claude-agent-state@tommasnik
 APPLET_DEST   := $(HOME)/.local/share/cinnamon/applets/$(APPLET_UUID)
 GNOME_EXT_DEST := $(HOME)/.local/share/gnome-shell/extensions/$(APPLET_UUID)
 
