@@ -8,7 +8,10 @@ import os
 
 import pytest
 
-_HOOK_PATH = os.path.expanduser("~/.claude/hooks/state-report.py")
+_HOOK_PATH = os.environ.get(
+    "HOOK_PATH",
+    os.path.join(os.path.dirname(__file__), "../../hook/state-report.py"),
+)
 _spec = importlib.util.spec_from_file_location("state_report", _HOOK_PATH)
 hook = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hook)
