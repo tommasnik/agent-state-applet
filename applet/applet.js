@@ -413,7 +413,9 @@ ClaudeAgentStateApplet.prototype = {
         let inState    = agent.timestamp  ? formatDuration(now - agent.timestamp)  : "-";
         let running    = agent.started_at ? formatDuration(now - agent.started_at) : "-";
 
-        let lines = [
+        let lines = [];
+        if (agent.ai_title) lines.push(agent.ai_title);
+        lines.push(
             "Project:  " + project,
             "Path:     " + (agent.cwd || "-"),
             "State:    " + stateLabel + toolInfo,
@@ -421,8 +423,8 @@ ClaudeAgentStateApplet.prototype = {
             "Session:  " + (agent.session_id ? agent.session_id.slice(0, 8) : "-"),
             "In state: " + inState,
             "Running:  " + running,
-            "PID:      " + agent.pid,
-        ];
+            "PID:      " + agent.pid
+        );
         if (agent.subagent_count > 0) lines.push("Subagents: " + agent.subagent_count);
         return lines.join("\n");
     },

@@ -106,6 +106,7 @@ class TestHookToServerContract:
         "pid", "cwd", "state", "timestamp", "hook_event", "tool_name",
         "session_id", "subagent_count", "started_at",
         "window_id", "tab_name", "tty", "project_root",
+        "ai_title",
     }
 
     def test_hook_always_fields_stored_by_server(self):
@@ -130,12 +131,14 @@ class TestServerToAppletContract:
         "pid", "state", "cwd", "project_root", "window_id",
         "hook_event", "tool_name", "session_id",
         "subagent_count", "started_at", "timestamp",
+        "ai_title",
     }
 
     SERVER_WRITES = {
         "pid", "cwd", "state", "timestamp", "hook_event", "tool_name",
         "session_id", "subagent_count", "started_at",
         "window_id", "tab_name", "tty", "project_root",
+        "ai_title",
     }
 
     def test_all_applet_reads_are_server_written(self):

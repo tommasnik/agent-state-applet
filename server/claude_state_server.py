@@ -32,6 +32,9 @@ STATE_FILE = "/tmp/claude-agents.json"
 HOST = "127.0.0.1"
 PORT = 7855
 PID_CHECK_INTERVAL = 5   # seconds between liveness sweeps
+JSONL_POLL_INTERVAL = 3  # seconds between ai-title polling sweeps
+
+CLAUDE_PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 
 agents = {}
 agents_lock = threading.Lock()
@@ -79,6 +82,70 @@ def get_open_xids():
         return xids
     except Exception:
         return None
+
+
+def _encode_project_root(project_root):
+    """Encode project_root to match Claude's JSONL directory naming convention.
+
+    Claude replaces '/' with '-' and strips the leading '-'.
+    Example: /home/tom/code/myproject -> -home-tom-code-myproject (leading - stripped)
+    """
+    encoded = project_root.replace("/", "-")
+    return encoded.lstrip("-")
+
+
+def _jsonl_path(project_root, session_id):
+    """Return the path to the JSONL file for a given agent."""
+    encoded = _encode_project_root(project_root)
+    return os.path.join(CLAUDE_PROJECTS_DIR, encoded, session_id + ".jsonl")
+
+
+def _read_ai_title(jsonl_path):
+    """Read ai-title from a JSONL file. Returns the title string or None."""
+    try:
+        with open(jsonl_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("type") == "ai-title" and "aiTitle" in entry:
+                        return entry["aiTitle"]
+                except (ValueError, TypeError):
+                    continue
+    except (OSError, IOError):
+        pass
+    return None
+
+
+def ai_title_poller():
+    """Background thread: polls JSONL files to pick up ai-title entries."""
+    while True:
+        time.sleep(JSONL_POLL_INTERVAL)
+        changed = False
+        with agents_lock:
+            snapshot = {pid: dict(a) for pid, a in agents.items()}
+
+        for pid, agent in snapshot.items():
+            # Skip agents that already have a title (only set once)
+            if agent.get("ai_title"):
+                continue
+            session_id   = agent.get("session_id", "")
+            project_root = agent.get("project_root", "")
+            if not session_id or not project_root:
+                continue
+
+            path  = _jsonl_path(project_root, session_id)
+            title = _read_ai_title(path)
+            if title:
+                with agents_lock:
+                    if pid in agents and not agents[pid].get("ai_title"):
+                        agents[pid]["ai_title"] = title
+                        changed = True
+
+        if changed:
+            write_state()
 
 
 def pid_checker():
@@ -174,6 +241,8 @@ class Handler(BaseHTTPRequestHandler):
                     "tab_name":     data.get("tab_name",     existing.get("tab_name",     "")),
                     "tty":          data.get("tty",          existing.get("tty",          "")),
                     "project_root": data.get("project_root", existing.get("project_root", "")),
+                    # ai_title is set by ai_title_poller and never overwritten from hook
+                    "ai_title": existing.get("ai_title", ""),
                 }
 
         write_state()
@@ -264,7 +333,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    threading.Thread(target=pid_checker, daemon=True).start()
+    threading.Thread(target=pid_checker,     daemon=True).start()
+    threading.Thread(target=ai_title_poller, daemon=True).start()
 
     server = HTTPServer((HOST, PORT), Handler)
     print(f"Claude State Server on {HOST}:{PORT}", flush=True)
