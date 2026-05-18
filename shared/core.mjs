@@ -349,61 +349,136 @@ export function makeFileWatcher(deps, path, onChange) {
 // ---------------------------------------------------------------------------
 // Flash window: draws an orange border that fades out over cfg.flashDuration.
 // `host.getWindowActors()` must return an array of MutterWindow actors.
+//
+// Uses St.Widget + CSS background-color instead of Clutter.Actor + Clutter.Color
+// because Clutter.Color is undefined in GNOME Shell 47+ (Mutter 15) — the old
+// constructor was removed. CSS rgba() is portable across both Cinnamon (Muffin)
+// and GNOME (Mutter).
 // ---------------------------------------------------------------------------
+function rgbaCss(col) {
+    let r = col && col.red   != null ? col.red   : 255;
+    let g = col && col.green != null ? col.green : 140;
+    let b = col && col.blue  != null ? col.blue  : 0;
+    let a = col && col.alpha != null ? col.alpha : 220;
+    return "rgba(" + r + "," + g + "," + b + "," + (a / 255) + ")";
+}
+
 export function flashWindow(deps, host, xidHexOrDec, cfg) {
-    if (!xidHexOrDec) return;
+    function dbg(msg) {
+        try { if (typeof console !== "undefined" && console.log) console.log("[claude-flash] " + msg); } catch (_) {}
+        try { if (typeof log === "function") log("[claude-flash] " + msg); } catch (_) {}
+        try {
+            if (deps.GLib && deps.GLib.file_set_contents) {
+                let ts = new Date().toISOString();
+                deps.GLib.spawn_command_line_async('sh -c "echo \\"' + ts + ' ' + msg.replace(/"/g, '\\"') + '\\" >> /tmp/claude-flash.log"');
+            }
+        } catch (_) {}
+    }
+
+    if (!xidHexOrDec) { dbg("no xid passed"); return; }
     let targetXid;
     try {
         let s = String(xidHexOrDec);
         targetXid = s.indexOf("0x") === 0 ? parseInt(s, 16) : parseInt(s, 10);
-    } catch (_) { return; }
-    if (!targetXid) return;
+    } catch (_) { dbg("xid parse fail"); return; }
+    if (!targetXid) { dbg("xid=0"); return; }
 
+    const St      = deps.St;
     const Clutter = deps.Clutter;
+    const Main    = deps.Main;
     const c       = cfg || DEFAULT_CONFIG;
     const actors  = host && host.getWindowActors ? host.getWindowActors() : [];
+    const stripBg = rgbaCss(c.flashColor);
 
-    for (let i = 0; i < actors.length; i++) {
-        let actor = actors[i];
-        let metaWin = actor.get_meta_window ? actor.get_meta_window() : null;
-        if (!metaWin || !metaWin.get_xwindow) continue;
-        if (metaWin.get_xwindow() !== targetXid) continue;
-
-        let W = actor.width;
-        let H = actor.height;
-        let T = c.flashThickness;
-        let rects = [
-            { x: 0,     y: 0,     width: W, height: T },
-            { x: 0,     y: H - T, width: W, height: T },
-            { x: 0,     y: 0,     width: T, height: H },
-            { x: W - T, y: 0,     width: T, height: H },
-        ];
-        let color = new Clutter.Color(c.flashColor);
-        rects.forEach(function(r) {
-            let strip = new Clutter.Actor({
-                background_color: color,
-                x: r.x, y: r.y, width: r.width, height: r.height,
-                reactive: false,
-            });
-            actor.add_child(strip);
-            if (strip.ease) {
-                strip.ease({
-                    opacity: 0,
-                    duration: c.flashDuration,
-                    mode: Clutter.AnimationMode ? Clutter.AnimationMode.EASE_OUT_QUAD : 0,
-                    onComplete: function() { strip.destroy(); },
-                });
-            } else if (deps.GLib && deps.GLib.timeout_add) {
-                deps.GLib.timeout_add(deps.GLib.PRIORITY_DEFAULT, c.flashDuration, function() {
-                    strip.destroy();
-                    return deps.GLib.SOURCE_REMOVE;
-                });
-            } else {
-                strip.destroy();
-            }
-        });
-        break;
+    // Find target window actor by xid.
+    //
+    // Mutter 47 (GNOME 47) removed meta_window_get_xwindow() from the JS-facing
+    // API; it now returns 0. Workaround: meta_window.get_description() returns
+    // a string like "0x12345 (Title)" that includes the X11 window ID for X11
+    // windows. Parse the xid out of it. Fall back to get_xwindow() (Cinnamon
+    // / older Mutter still expose it correctly).
+    function extractXidFromMeta(mw) {
+        if (!mw) return 0;
+        if (mw.get_xwindow) {
+            let x = mw.get_xwindow();
+            if (x) return x;
+        }
+        if (mw.get_description) {
+            try {
+                let d = mw.get_description() || "";
+                let m = d.match(/0x[0-9a-fA-F]+/);
+                if (m) return parseInt(m[0], 16);
+            } catch (_) {}
+        }
+        return 0;
     }
+    let actor = null, metaWin = null;
+    let xidsSeen = [];
+    for (let i = 0; i < actors.length; i++) {
+        let mw = actors[i].get_meta_window ? actors[i].get_meta_window() : null;
+        if (!mw) { xidsSeen.push("noMeta"); continue; }
+        let xid = extractXidFromMeta(mw);
+        let title = mw.get_title ? mw.get_title() : "";
+        xidsSeen.push("0x" + (xid || 0).toString(16) + "(" + (title || "").slice(0, 20) + ")");
+        if (xid === targetXid) { actor = actors[i]; metaWin = mw; break; }
+    }
+    if (!actor) {
+        dbg("no actor for xid 0x" + targetXid.toString(16) + " (scanned " + actors.length + "): " + xidsSeen.join(", "));
+        return;
+    }
+
+    // Use the window's frame_rect (stage coords, excludes invisible shadow).
+    let x, y, W, H;
+    if (metaWin && metaWin.get_frame_rect) {
+        let fr = metaWin.get_frame_rect();
+        x = fr.x; y = fr.y; W = fr.width; H = fr.height;
+    } else {
+        x = actor.x; y = actor.y; W = actor.width; H = actor.height;
+    }
+
+    // Place overlay strips in a top-level container that paints above all
+    // windows. Prefer Main.uiGroup (always above window stack). On GNOME 47,
+    // adding to global.window_group can be restacked away by Mutter, and
+    // adding as a child of MetaWindowActor isn't painted on top of the X11
+    // surface — Main.uiGroup avoids both problems and works on Cinnamon too.
+    let container = (Main && Main.uiGroup) ? Main.uiGroup : (actor.get_parent && actor.get_parent());
+    if (!container || !container.add_child) { dbg("no container"); return; }
+
+    let T = c.flashThickness;
+    let rects = [
+        { x: x,         y: y,         width: W, height: T },
+        { x: x,         y: y + H - T, width: W, height: T },
+        { x: x,         y: y,         width: T, height: H },
+        { x: x + W - T, y: y,         width: T, height: H },
+    ];
+    dbg("flashing xid=0x" + targetXid.toString(16) + " at " + x + "," + y + " " + W + "x" + H);
+
+    rects.forEach(function(r) {
+        let strip = new St.Widget({
+            style:    "background-color: " + stripBg + ";",
+            x:        r.x,
+            y:        r.y,
+            width:    r.width,
+            height:   r.height,
+            reactive: false,
+        });
+        container.add_child(strip);
+        if (strip.ease) {
+            strip.ease({
+                opacity: 0,
+                duration: c.flashDuration,
+                mode: Clutter && Clutter.AnimationMode ? Clutter.AnimationMode.EASE_OUT_QUAD : 0,
+                onComplete: function() { strip.destroy(); },
+            });
+        } else if (deps.GLib && deps.GLib.timeout_add) {
+            deps.GLib.timeout_add(deps.GLib.PRIORITY_DEFAULT, c.flashDuration, function() {
+                strip.destroy();
+                return deps.GLib.SOURCE_REMOVE;
+            });
+        } else {
+            strip.destroy();
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +554,7 @@ export function createIndicator(opts) {
     }
 
     function render(agents) {
+        try { deps.GLib.spawn_command_line_async('sh -c "echo render n=' + Object.keys(agents).length + ' >> /tmp/claude-flash.log"'); } catch (_) {}
         lastAgents = agents;
 
         let ph     = host.panelHeight ? host.panelHeight() : 32;
@@ -514,6 +590,7 @@ export function createIndicator(opts) {
                     let clickPid = pid;
                     ball.connect("button-press-event", function(_actor, event) {
                         let btn = event && event.get_button ? event.get_button() : 1;
+                        try { deps.GLib.spawn_command_line_async('sh -c "echo ball-press pid=' + clickPid + ' btn=' + btn + ' >> /tmp/claude-flash.log"'); } catch (_) {}
                         if (btn === 1) dispatchClick(clickPid);
                         return clickEventReturn();
                     });

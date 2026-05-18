@@ -289,15 +289,24 @@ class Handler(BaseHTTPRequestHandler):
                     })
 
             # IDEA titles: "project-name – current-file.ext"
-            # Each project has its own window; match by project name prefix.
+            # Each IDE project has its own window; match by project name prefix.
+            # For monorepos the agent's project_root may be a nested subdir
+            # (e.g. /repo/sites/two-hands-magic), while the IDE window title
+            # uses the outer project name ("repo"). Try every path segment
+            # from innermost outward — first wmctrl title match wins.
             if project_root:
-                project_name = project_root.rstrip("/").split("/")[-1]
-                for w in windows:
-                    t = w["title"]
-                    if t == project_name or t.startswith(project_name + " ") \
-                            or t.startswith(project_name + "–") \
-                            or t.startswith(project_name + "—"):
-                        window_id = w["xid"]
+                segments = [s for s in project_root.strip("/").split("/") if s]
+                for seg in reversed(segments):
+                    matched = False
+                    for w in windows:
+                        t = w["title"]
+                        if t == seg or t.startswith(seg + " ") \
+                                or t.startswith(seg + "–") \
+                                or t.startswith(seg + "—"):
+                            window_id = w["xid"]
+                            matched = True
+                            break
+                    if matched:
                         break
 
             if window_id:

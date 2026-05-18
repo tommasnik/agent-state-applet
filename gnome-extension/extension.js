@@ -64,6 +64,17 @@ class ClaudeIndicator extends PanelMenu.Button {
 
         this.add_child(this._indicator.box);
         this.set_style('padding: 0;');
+
+        // DEBUG: log every event reaching the box
+        this._indicator.box.connect('captured-event', (_a, event) => {
+            let t = event && event.type ? event.type() : -1;
+            GLib.spawn_command_line_async('sh -c "echo box-captured-event type=' + t + ' >> /tmp/claude-flash.log"');
+            return Clutter.EVENT_PROPAGATE;
+        });
+        this.connect('button-press-event', () => {
+            GLib.spawn_command_line_async('sh -c "echo PanelButton-press >> /tmp/claude-flash.log"');
+            return Clutter.EVENT_PROPAGATE;
+        });
     }
 
     _agentWindowFocused(agent) {
@@ -89,6 +100,7 @@ class ClaudeIndicator extends PanelMenu.Button {
     }
 
     _onClick(pid, agent, action) {
+        GLib.spawn_command_line_async('sh -c "echo \\"_onClick pid=' + pid + ' action=' + action + '\\" >> /tmp/claude-flash.log"');
         if (action === 'reset') {
             this._resetAgent(pid);
         } else {
@@ -106,6 +118,7 @@ class ClaudeIndicator extends PanelMenu.Button {
     }
 
     _focusAgent(pid) {
+        GLib.spawn_command_line_async('sh -c "echo \\"_focusAgent pid=' + pid + '\\" >> /tmp/claude-flash.log"');
         // Spawn curl to /focus and read response for the (possibly server-resolved)
         // window_id, then flash it. Using Gio.Subprocess to capture stdout.
         const self = this;
@@ -129,7 +142,10 @@ class ClaudeIndicator extends PanelMenu.Button {
                 let [, stdout] = p.communicate_utf8_finish(res);
                 let data = JSON.parse(stdout || '{}');
                 windowId = data.window_id || null;
-            } catch (_) {}
+            } catch (e) {
+                GLib.spawn_command_line_async('sh -c "echo \\"focus parse fail: ' + e + '\\" >> /tmp/claude-flash.log"');
+            }
+            GLib.spawn_command_line_async('sh -c "echo \\"focus pid=' + pid + ' window_id=' + windowId + '\\" >> /tmp/claude-flash.log"');
             if (windowId) {
                 GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
                     self._indicator.flashWindow(windowId);
