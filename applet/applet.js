@@ -351,9 +351,9 @@ ClaudeAgentStateApplet.prototype = {
             let groupLbl = new St.Label({
                 style: "color: rgba(255,255,255,0.85); font-size: 10px;"
                      + " padding: 0 3px; text-align: center;"
-                     + " min-width: " + (n * ballW) + "px;",
+                     + " width: " + (n * ballW) + "px;",
             });
-            groupLbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.NONE);
+            groupLbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.MIDDLE);
             groupLbl.clutter_text.set_single_line_mode(true);
             groupLbl.set_text(this._projectName(group[0]));
             groupBox.add_actor(groupLbl);
