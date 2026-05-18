@@ -77,6 +77,24 @@ Note: `dbus-send` does NOT work for this — use `gdbus call`.
 - **Debug state file**: `curl -s http://127.0.0.1:7855/status | python3 -m json.tool`
 - **Test without Claude running**: POST to `/agent` manually (see README for curl example).
 
+## Tests
+
+Run all Python tests: `cd /home/tom/code/agent-state-applet && .venv/bin/pytest server/tests/ -v`
+Run JS tests: `npm test` (in repo root)
+
+| Test file | What it covers | Update when… |
+|-----------|---------------|--------------|
+| `server/tests/test_hook_logic.py` | Pure logic of `hook/state-report.py`: `find_project_root`, `HOOK_STATE` mapping, payload field contract | You change `HOOK_STATE`, `ASK_USER_TOOLS`, `find_project_root`, or add/remove payload fields |
+| `server/tests/test_server_api.py` | HTTP API of `claude_state_server.py` | You add/change server endpoints or agent state handling |
+| `server/tests/test_contract.py` | Hook→server payload contract (field names, types) | You rename or add fields in the POST /agent payload |
+| `server/tests/test_focus_behavior.py` | Focus/window tracking logic | You change window_id handling |
+| `server/tests/test_restore_state.py` | State persistence/restore | You change how the server saves or restores state |
+| `server/tests/test_colors.py` | State→color mapping | You add or rename agent states |
+| `server/tests/test_ai_title.py` | AI-generated session titles | You change title generation logic |
+| `test/render.test.mjs` | Applet JS render logic | You change `applet.js` rendering functions |
+
+**Important:** `test_hook_logic.py` imports `hook/state-report.py` directly. Any change to hook logic (new state, new event, new payload field) requires updating this test file too.
+
 ## What NOT to break
 
 - The server writes the state file atomically via `os.replace()` on a temp file — the applet watches the directory for `IN_MOVED_TO` events. Don't change to in-place writes.
