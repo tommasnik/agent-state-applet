@@ -23,7 +23,7 @@ _spec = importlib.util.spec_from_file_location("state_report", _HOOK_PATH)
 hook = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hook)
 
-_APPLET_JS = os.path.join(os.path.dirname(__file__), "../../applet/applet.js")
+_APPLET_JS = os.path.join(os.path.dirname(__file__), "../../shared/core.mjs")
 _COLOR_SPEC = os.path.join(os.path.dirname(__file__), "test_colors.py")
 
 _cspec = importlib.util.spec_from_file_location("test_colors", _COLOR_SPEC)
