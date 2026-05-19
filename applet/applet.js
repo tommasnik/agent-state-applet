@@ -100,9 +100,8 @@ ClaudeAgentStateApplet.prototype = {
     _onClick: function(pid, agent, action) {
         if (action === "reset") {
             this._resetAgent(pid);
-        } else {
-            this._focusAgent(pid);
         }
+        this._focusAgent(pid);
     },
 
     _resetAgent: function(pid) {

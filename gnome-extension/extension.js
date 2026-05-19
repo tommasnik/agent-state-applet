@@ -103,9 +103,8 @@ class ClaudeIndicator extends PanelMenu.Button {
         GLib.spawn_command_line_async('sh -c "echo \\"_onClick pid=' + pid + ' action=' + action + '\\" >> /tmp/claude-flash.log"');
         if (action === 'reset') {
             this._resetAgent(pid);
-        } else {
-            this._focusAgent(pid);
         }
+        this._focusAgent(pid);
     }
 
     _resetAgent(pid) {
