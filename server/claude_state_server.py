@@ -34,6 +34,7 @@ HOST = "127.0.0.1"
 PORT = 7855
 PID_CHECK_INTERVAL = 5   # seconds between liveness sweeps
 JSONL_POLL_INTERVAL = 3  # seconds between ai-title polling sweeps
+GHOSTTY_TAB_POLL_INTERVAL = 5  # seconds between Ghostty tab-order sweeps
 
 CLAUDE_PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 
@@ -146,6 +147,116 @@ def ai_title_poller():
 
         if changed:
             write_state()
+
+
+_ghostty_tab_lists = None  # cached AT-SPI PAGE_TAB_LIST nodes
+
+
+def _find_ghostty_tab_lists():
+    """Full tree walk to find PAGE_TAB_LIST nodes in the Ghostty app.
+
+    Expensive (~40 ms); result is cached in _ghostty_tab_lists.
+    """
+    import pyatspi
+
+    result = []
+
+    def walk(node, depth=0):
+        if depth > 25:
+            return
+        try:
+            if node.getRole().value_name == "ATSPI_ROLE_PAGE_TAB_LIST":
+                result.append(node)
+                return
+            for child in node:
+                walk(child, depth + 1)
+        except Exception:
+            pass
+
+    desktop = pyatspi.Registry.getDesktop(0)
+    for app in desktop:
+        if app is None:
+            continue
+        if app.name == "ghostty":
+            walk(app)
+            break
+    return result
+
+
+def _get_ghostty_tab_order():
+    """Return list of tab titles in Ghostty's current visual order (left→right).
+
+    Uses cached PAGE_TAB_LIST nodes for fast reads (~5 ms). Re-discovers on
+    stale cache or first call. Returns [] if Ghostty is not running.
+    """
+    global _ghostty_tab_lists
+    try:
+        import pyatspi  # noqa: F401 — ensures pyatspi is available
+
+        def read_tabs(tab_lists):
+            tabs = []
+            for tl in tab_lists:
+                for child in tl:
+                    try:
+                        role = child.getRole().value_name
+                        if role == "ATSPI_ROLE_PAGE_TAB":
+                            tabs.append(child.name)
+                        else:
+                            for gc in child:
+                                try:
+                                    if gc.getRole().value_name == "ATSPI_ROLE_PAGE_TAB":
+                                        tabs.append(gc.name)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+            return tabs
+
+        if _ghostty_tab_lists is None:
+            _ghostty_tab_lists = _find_ghostty_tab_lists()
+
+        try:
+            return read_tabs(_ghostty_tab_lists)
+        except Exception:
+            # Cached nodes are stale (Ghostty restarted); re-discover once.
+            _ghostty_tab_lists = _find_ghostty_tab_lists()
+            return read_tabs(_ghostty_tab_lists)
+
+    except Exception:
+        return []
+
+
+def ghostty_tab_poller():
+    """Background thread: keeps ghostty_tab_index current for Ghostty agents."""
+    while True:
+        time.sleep(GHOSTTY_TAB_POLL_INTERVAL)
+        try:
+            with agents_lock:
+                has_ghostty = any(
+                    a.get("terminal_type") == "ghostty" for a in agents.values()
+                )
+            if not has_ghostty:
+                continue
+
+            tabs = _get_ghostty_tab_order()
+            # Build title→index map; prefer ai_title match, fall back to tab_name
+            title_to_idx = {title: i for i, title in enumerate(tabs)}
+
+            changed = False
+            with agents_lock:
+                for agent in agents.values():
+                    if agent.get("terminal_type") != "ghostty":
+                        continue
+                    ai_t  = agent.get("ai_title", "")
+                    tab_n = agent.get("tab_name", "")
+                    idx = title_to_idx.get(ai_t, title_to_idx.get(tab_n))
+                    if agent.get("ghostty_tab_index") != idx:
+                        agent["ghostty_tab_index"] = idx
+                        changed = True
+            if changed:
+                write_state()
+        except Exception:
+            pass
 
 
 def pid_checker():
@@ -454,8 +565,9 @@ def _restore_state():
 
 def main():
     _restore_state()
-    threading.Thread(target=pid_checker,     daemon=True).start()
-    threading.Thread(target=ai_title_poller, daemon=True).start()
+    threading.Thread(target=pid_checker,      daemon=True).start()
+    threading.Thread(target=ai_title_poller,  daemon=True).start()
+    threading.Thread(target=ghostty_tab_poller, daemon=True).start()
 
     server = HTTPServer((HOST, PORT), Handler)
     print(f"Claude State Server on {HOST}:{PORT}", flush=True)

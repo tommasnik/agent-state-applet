@@ -109,13 +109,33 @@ export function ballStyle(color, w, h, cfg) {
 }
 
 // Returns array of group descriptors from an agents dict (pid → agent object).
-// Groups are ordered by the earliest started_at in each group.
+// Groups and agents within groups are ordered by PTY number (/dev/pts/N),
+// which matches the visual tab order in IDEA/Ghostty. Falls back to started_at
+// for agents without a tty.
 // Each group: { key, label, ballW, ballH, agents: [{ pid, state, color }] }
 export function describeRender(agents, panelHeight, cfg) {
     let c = cfg || DEFAULT_CONFIG;
     let colors = c.colors || STATE_COLOR;
 
+    // Ghostty: use ghostty_tab_index (0=leftmost) when the server has it
+    // (populated by AT-SPI polling). Falls back to PTY-descending heuristic
+    // when the index isn't known yet (new session or Ghostty not running).
+    // Other terminals (IDEA, generic): sort by PTY ascending (tab creation order).
+    function ttyOrder(agent) {
+        if (agent.terminal_type === "ghostty") {
+            let idx = agent.ghostty_tab_index;
+            if (idx !== null && idx !== undefined) return idx;
+            // fallback: higher PTY = newer = further left in Ghostty
+            let m = (agent.tty || "").match(/\/dev\/pts\/(\d+)$/);
+            return m ? -parseInt(m[1], 10) : Infinity;
+        }
+        let m = (agent.tty || "").match(/\/dev\/pts\/(\d+)$/);
+        return m ? parseInt(m[1], 10) : Infinity;
+    }
+
     let sorted = Object.values(agents).sort(function(a, b) {
+        let ta = ttyOrder(a), tb = ttyOrder(b);
+        if (ta !== tb) return ta - tb;
         return (a.started_at || 0) - (b.started_at || 0);
     });
 

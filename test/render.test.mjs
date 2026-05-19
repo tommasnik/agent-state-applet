@@ -66,30 +66,49 @@ describe("describeRender: structure", () => {
 // ---------------------------------------------------------------------------
 
 describe("describeRender: ordering", () => {
-    test("groups ordered by earliest started_at in group", () => {
+    test("groups ordered by lowest PTY number in group", () => {
         const r = describeRender({
-            "1": agent({ pid: "1", project_root: "/beta",  started_at: 200 }),
-            "2": agent({ pid: "2", project_root: "/alpha", started_at: 100 }),
+            "1": agent({ pid: "1", project_root: "/beta",  tty: "/dev/pts/5" }),
+            "2": agent({ pid: "2", project_root: "/alpha", tty: "/dev/pts/2" }),
         }, PH);
-        assert.equal(r[0].label, "alpha");
+        assert.equal(r[0].label, "alpha"); // pts/2 < pts/5
         assert.equal(r[1].label, "beta");
     });
 
-    test("agents within group ordered by started_at (ascending)", () => {
+    test("agents within group ordered by PTY number (ascending)", () => {
         const r = describeRender({
-            "1": agent({ pid: "1", project_root: "/x", started_at: 50 }),
-            "2": agent({ pid: "2", project_root: "/x", started_at: 10 }),
+            "1": agent({ pid: "1", project_root: "/x", tty: "/dev/pts/7" }),
+            "2": agent({ pid: "2", project_root: "/x", tty: "/dev/pts/3" }),
         }, PH);
-        assert.equal(r[0].agents[0].pid, "2"); // started earlier → leftmost
+        assert.equal(r[0].agents[0].pid, "2"); // pts/3 < pts/7
         assert.equal(r[0].agents[1].pid, "1");
     });
 
-    test("missing started_at treated as 0 (appears first)", () => {
+    test("agents without tty fall back to started_at and appear last", () => {
         const r = describeRender({
-            "1": agent({ pid: "1", started_at: 100 }),
-            "2": agent({ pid: "2", started_at: undefined }),
+            "1": agent({ pid: "1", tty: undefined, started_at: 100 }),
+            "2": agent({ pid: "2", tty: "/dev/pts/5", started_at: 200 }),
         }, PH);
-        assert.equal(r[0].agents[0].pid, "2");
+        assert.equal(r[0].agents[0].pid, "2"); // has PTY → first
+        assert.equal(r[0].agents[1].pid, "1"); // no PTY → last
+    });
+
+    test("ghostty agents with ghostty_tab_index sorted by that index", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", project_root: "/x", tty: "/dev/pts/7", terminal_type: "ghostty", ghostty_tab_index: 0 }),
+            "2": agent({ pid: "2", project_root: "/x", tty: "/dev/pts/2", terminal_type: "ghostty", ghostty_tab_index: 1 }),
+        }, PH);
+        assert.equal(r[0].agents[0].pid, "1"); // tab_index 0 = leftmost
+        assert.equal(r[0].agents[1].pid, "2");
+    });
+
+    test("ghostty agents without tab_index fall back to PTY descending", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", project_root: "/x", tty: "/dev/pts/2", terminal_type: "ghostty" }),
+            "2": agent({ pid: "2", project_root: "/x", tty: "/dev/pts/7", terminal_type: "ghostty" }),
+        }, PH);
+        assert.equal(r[0].agents[0].pid, "2"); // pts/7 = newer = leftmost fallback
+        assert.equal(r[0].agents[1].pid, "1");
     });
 });
 
