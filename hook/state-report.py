@@ -135,8 +135,31 @@ def get_tty(pid):
     return ""
 
 
+def get_terminal_type(claude_pid):
+    """Return terminal type: 'ghostty', 'idea', or 'generic'."""
+    if os.environ.get("TERM_PROGRAM") == "ghostty" or os.environ.get("TERM") == "xterm-ghostty":
+        return "ghostty"
+    pid = claude_pid
+    visited = set()
+    while pid > 1 and pid not in visited:
+        visited.add(pid)
+        if _is_idea_pid(pid):
+            return "idea"
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                for line in f:
+                    if line.startswith("PPid:"):
+                        pid = int(line.split()[1])
+                        break
+                else:
+                    break
+        except Exception:
+            break
+    return "generic"
+
+
 def set_terminal_title(claude_pid, title):
-    """Write OSC-0 escape to Claude's stdin PTY to rename the IntelliJ terminal tab."""
+    """Write OSC-0 escape to Claude's stdin PTY to rename the terminal tab."""
     try:
         tty = os.readlink(f"/proc/{claude_pid}/fd/0")
         if tty.startswith("/dev/pts/"):
@@ -206,8 +229,9 @@ def main():
     if event in ("SessionStart", "UserPromptSubmit"):
         wid = get_window_id_for_pid(claude_pid)
         tab = f"cc-{session_id[:8]}" if session_id else ""
-        payload["window_id"] = wid
-        payload["tab_name"]  = tab
+        payload["window_id"]     = wid
+        payload["tab_name"]      = tab
+        payload["terminal_type"] = get_terminal_type(claude_pid)
         if tab:
             set_terminal_title(claude_pid, tab)
             if event == "SessionStart":

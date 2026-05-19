@@ -74,9 +74,9 @@ def clear_agents(server):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _wmctrl_popen_args(mock_popen):
-    """Return the args list passed to the wmctrl -i -a Popen call, or None."""
-    for call in mock_popen.call_args_list:
+def _wmctrl_focus_args(mock_run):
+    """Return the args list passed to the wmctrl -i -a run call, or None."""
+    for call in mock_run.call_args_list:
         args = call[0][0] if call[0] else call[1].get("args", [])
         if "-a" in args:
             return args
@@ -97,12 +97,12 @@ class TestSingleAgentFocusWithWindowId:
             "window_id": "0x00200001", "project_root": "",
         })
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout="", returncode=0)
             code, _ = _post("/focus", {"pid": 7001})
 
         assert code == 200
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args is not None, "wmctrl -i -a must be called"
 
     def test_correct_window_id_passed_to_wmctrl(self, server):
@@ -112,11 +112,11 @@ class TestSingleAgentFocusWithWindowId:
             "window_id": "0x00200001", "project_root": "",
         })
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout="", returncode=0)
             _post("/focus", {"pid": 7002})
 
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args == ["wmctrl", "-i", "-a", "0x00200001"], \
             f"Expected wmctrl -i -a 0x00200001, got {args}"
 
@@ -127,12 +127,12 @@ class TestSingleAgentFocusWithWindowId:
             "window_id": "0x00200001", "project_root": "",
         })
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout="", returncode=0)
             code, _ = _post("/focus", {"pid": 7003})
 
         assert code == 200
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args is not None, "focus must be attempted even for a done agent"
 
     def test_focus_works_for_waiting_for_approval_agent(self, server):
@@ -142,12 +142,12 @@ class TestSingleAgentFocusWithWindowId:
             "window_id": "0x00200001", "project_root": "",
         })
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout="", returncode=0)
             code, _ = _post("/focus", {"pid": 7004})
 
         assert code == 200
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args is not None
 
 
@@ -161,12 +161,12 @@ class TestSingleAgentFocusViaProjectRoot:
             "window_id": "", "project_root": "/home/user/idea-project",
         })
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout=WMCTRL_ONE_WINDOW, returncode=0)
             code, _ = _post("/focus", {"pid": 7010})
 
         assert code == 200
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args is not None, "wmctrl must be called when project name matches"
         assert "0x00200001" in args, \
             f"The matched window xid must be used, got {args}"
@@ -178,12 +178,12 @@ class TestSingleAgentFocusViaProjectRoot:
             "window_id": "", "project_root": "/home/user/no-such-project",
         })
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout=WMCTRL_MULTI, returncode=0)
             code, _ = _post("/focus", {"pid": 7011})
 
         assert code == 200
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args is None, "wmctrl -i -a must NOT be called when window cannot be found"
 
     def test_project_name_title_with_space_en_dash_matched(self, server):
@@ -194,11 +194,11 @@ class TestSingleAgentFocusViaProjectRoot:
         })
         wmctrl_out = "0x00200005  0 myhost  myproject – SomeFile.java\n"
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout=wmctrl_out, returncode=0)
             _post("/focus", {"pid": 7012})
 
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args is not None and "0x00200005" in args, \
             f"en-dash title must match, got {args}"
 
@@ -210,11 +210,11 @@ class TestSingleAgentFocusViaProjectRoot:
         })
         wmctrl_out = "0x00200006  0 myhost  clean-project\n"
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout=wmctrl_out, returncode=0)
             _post("/focus", {"pid": 7013})
 
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args is not None and "0x00200006" in args
 
 
@@ -229,11 +229,11 @@ class TestFocusFallback:
             "project_root": "/home/user/idea-project",
         })
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout=WMCTRL_MULTI, returncode=0)
             _post("/focus", {"pid": 7020})
 
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args is not None
         assert "0x00200001" in args, \
             f"Project name match (0x00200001) must override stored id 0x00200099, got {args}"
@@ -246,11 +246,11 @@ class TestFocusFallback:
             "project_root": "/home/user/no-match-project",
         })
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.return_value = mock.Mock(stdout=WMCTRL_MULTI, returncode=0)
             _post("/focus", {"pid": 7021})
 
-        args = _wmctrl_popen_args(popen_mock)
+        args = _wmctrl_focus_args(run_mock)
         assert args is not None
         assert "0x00200099" in args, \
             f"Stored window_id must be used as fallback, got {args}"
@@ -269,19 +269,15 @@ class TestDesktopSwitch:
         wmctrl_out = "0x00200001  2 myhost  idea-project – Main.kt\n"
         call_order = []
         with mock.patch("subprocess.run") as run_mock, \
-             mock.patch("subprocess.Popen") as popen_mock:
+             mock.patch("subprocess.Popen"):
             run_mock.side_effect = lambda args, **kw: (
-                call_order.append(("run", args)),
+                call_order.append(args),
                 mock.Mock(stdout=wmctrl_out, returncode=0)
-            )[-1]
-            popen_mock.side_effect = lambda args, **kw: (
-                call_order.append(("popen", args)),
-                mock.Mock()
             )[-1]
             _post("/focus", {"pid": 7030})
 
-        switch_calls = [args for (kind, args) in call_order if kind == "run" and "-s" in args]
-        focus_calls  = [args for (kind, args) in call_order if kind == "popen" and "-a" in args]
+        switch_calls = [args for args in call_order if "-s" in args]
+        focus_calls  = [args for args in call_order if "-a" in args]
 
         assert switch_calls, "wmctrl -s must be called to switch desktop"
         assert "2" in switch_calls[0], f"Must switch to desktop 2, got {switch_calls[0]}"
@@ -372,12 +368,12 @@ class TestFocusResetsState:
             _post("/focus", {"pid": 8005})
 
         # Second click: focus on now-initialized agent
-        with mock.patch("subprocess.run") as m_run, mock.patch("subprocess.Popen") as m_pop:
+        with mock.patch("subprocess.run") as m_run, mock.patch("subprocess.Popen"):
             m_run.return_value = mock.Mock(stdout="", returncode=0)
             code, _ = _post("/focus", {"pid": 8005})
 
         assert code == 200
-        args = _wmctrl_popen_args(m_pop)
+        args = _wmctrl_focus_args(m_run)
         assert args is not None, \
             "wmctrl must be called on second focus after state reset to initialized"
 
@@ -463,3 +459,131 @@ class TestFocusResponseIncludesResolvedWindowId:
         assert code == 200
         assert body.get("window_id", "") == "", \
             f"Response window_id must be empty when no window found, got {body}"
+
+
+# ---------------------------------------------------------------------------
+# Ghostty tab focus: correct args passed to _focus_ghostty_tab
+# ---------------------------------------------------------------------------
+
+class TestGhosttyTabFocus:
+    """Server must call _focus_ghostty_tab with the right arguments."""
+
+    def _setup_ghostty_agent(self, pid, tab_name, tty, ai_title=""):
+        _post("/agent", {
+            "pid": pid, "state": "done",
+            "window_id": "0x00200001", "project_root": "/proj",
+            "terminal_type": "ghostty", "tab_name": tab_name, "tty": tty,
+        })
+        # ai_title is owned by the poller — set it directly in agent state
+        if ai_title:
+            with srv.agents_lock:
+                srv.agents[str(pid)]["ai_title"] = ai_title
+
+    def test_ghostty_focus_passes_tab_name_and_tty(self, server):
+        """_focus_ghostty_tab must receive tab_name, window_id, and tty."""
+        self._setup_ghostty_agent(6001, "cc-aabbccdd", "/dev/pts/5")
+        with mock.patch("subprocess.run") as run_mock, \
+             mock.patch("subprocess.Popen"), \
+             mock.patch("claude_state_server._focus_ghostty_tab") as ghostty_mock:
+            run_mock.return_value = mock.Mock(stdout="", returncode=0)
+            _post("/focus", {"pid": 6001})
+
+        ghostty_mock.assert_called_once()
+        positional = ghostty_mock.call_args[0]
+        keyword    = ghostty_mock.call_args[1]
+        assert positional[0] == "cc-aabbccdd", "first arg must be tab_name"
+        tty_passed = positional[2] if len(positional) > 2 else keyword.get("tty", "")
+        assert tty_passed == "/dev/pts/5", f"tty must be /dev/pts/5, got {tty_passed}"
+
+    def test_ghostty_focus_passes_ai_title_for_restore(self, server):
+        """_focus_ghostty_tab must receive ai_title so it can restore the tab title."""
+        self._setup_ghostty_agent(6002, "cc-deadbeef", "/dev/pts/7", "Restore This Title")
+        with mock.patch("subprocess.run") as run_mock, \
+             mock.patch("subprocess.Popen"), \
+             mock.patch("claude_state_server._focus_ghostty_tab") as ghostty_mock:
+            run_mock.return_value = mock.Mock(stdout="", returncode=0)
+            _post("/focus", {"pid": 6002})
+
+        ghostty_mock.assert_called_once()
+        positional = ghostty_mock.call_args[0]
+        keyword    = ghostty_mock.call_args[1]
+        ai_title_passed = (
+            (len(positional) >= 4 and positional[3] == "Restore This Title")
+            or keyword.get("ai_title") == "Restore This Title"
+        )
+        assert ai_title_passed, f"ai_title must reach _focus_ghostty_tab, got {ghostty_mock.call_args}"
+
+
+# ---------------------------------------------------------------------------
+# IDEA tab focus: AI title passed as newName to terminalFocus
+# ---------------------------------------------------------------------------
+
+class TestIdeaTabFocusAiTitle:
+    """When an IDEA agent has an ai_title, terminalFocus must receive newName=ai_title."""
+
+    def _setup_idea_agent(self, pid, tab_name, ai_title=""):
+        _post("/agent", {
+            "pid": pid, "state": "done",
+            "window_id": "0x00200001", "project_root": "/home/user/myproject",
+            "terminal_type": "idea", "tab_name": tab_name,
+        })
+        if ai_title:
+            with srv.agents_lock:
+                srv.agents[str(pid)]["ai_title"] = ai_title
+
+    def _idea_plugin_urls(self, captured):
+        return [u for u in captured if "63342" in u]
+
+    def test_terminal_focus_includes_new_name_when_ai_title_set(self, server):
+        """terminalFocus URL must contain newName=<ai_title> when agent has ai_title."""
+        self._setup_idea_agent(6010, "cc-11223344", "Refactor Auth Module")
+
+        captured = []
+        import urllib.request as _real_urllib
+        _orig = _real_urllib.urlopen
+
+        def side_effect(url, *a, **kw):
+            url_str = getattr(url, 'full_url', str(url))
+            if "63342" in str(url_str):
+                captured.append(str(url_str))
+                return mock.Mock(read=lambda: b"{}")
+            return _orig(url, *a, **kw)
+
+        with mock.patch("subprocess.run") as run_mock, \
+             mock.patch("subprocess.Popen"), \
+             mock.patch("urllib.request.urlopen", side_effect=side_effect):
+            run_mock.return_value = mock.Mock(stdout="", returncode=0)
+            _post("/focus", {"pid": 6010})
+
+        focus_urls = self._idea_plugin_urls(captured)
+        assert focus_urls, f"terminalFocus must be called, captured: {captured}"
+        url = focus_urls[0]
+        assert "tabName=cc-11223344" in url, f"tabName missing in {url}"
+        assert "newName=" in url, f"newName missing in {url}"
+        assert "Refactor" in url, f"AI title missing in {url}"
+
+    def test_terminal_focus_no_new_name_when_no_ai_title(self, server):
+        """terminalFocus URL must NOT contain newName when ai_title is empty."""
+        self._setup_idea_agent(6011, "cc-aabbccdd")
+
+        captured = []
+        import urllib.request as _real_urllib
+        _orig = _real_urllib.urlopen
+
+        def side_effect(url, *a, **kw):
+            url_str = getattr(url, 'full_url', str(url))
+            if "63342" in str(url_str):
+                captured.append(str(url_str))
+                return mock.Mock(read=lambda: b"{}")
+            return _orig(url, *a, **kw)
+
+        with mock.patch("subprocess.run") as run_mock, \
+             mock.patch("subprocess.Popen"), \
+             mock.patch("urllib.request.urlopen", side_effect=side_effect):
+            run_mock.return_value = mock.Mock(stdout="", returncode=0)
+            _post("/focus", {"pid": 6011})
+
+        focus_urls = self._idea_plugin_urls(captured)
+        assert focus_urls, f"terminalFocus must be called, captured: {captured}"
+        assert "newName" not in focus_urls[0], \
+            f"newName must be absent when no ai_title, got {focus_urls[0]}"

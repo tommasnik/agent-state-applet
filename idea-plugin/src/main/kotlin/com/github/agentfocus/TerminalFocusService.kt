@@ -19,6 +19,7 @@ class TerminalFocusService : RestService() {
     ): String? {
         val params = urlDecoder.parameters()
         val tabName = params["tabName"]?.firstOrNull() ?: return "Missing tabName"
+        val newName = params["newName"]?.firstOrNull()
         val projectName = params["project"]?.firstOrNull()
 
         val project = ProjectManager.getInstance().openProjects
@@ -28,11 +29,19 @@ class TerminalFocusService : RestService() {
         ApplicationManager.getApplication().invokeLater {
             val toolWindow = ToolWindowManager.getInstance(project)
                 .getToolWindow("Terminal") ?: return@invokeLater
+            // Primary: match by stable user-data tag (survives any displayName rename).
+            // Fallbacks: displayName == tabName, then displayName == newName (AI title).
             val content = toolWindow.contentManager.contents
-                .firstOrNull { it.displayName == tabName } ?: return@invokeLater
+                .firstOrNull { it.getUserData(CC_TAB_KEY) == tabName }
+                ?: toolWindow.contentManager.contents
+                    .firstOrNull { it.displayName == tabName }
+                ?: toolWindow.contentManager.contents
+                    .firstOrNull { newName != null && it.displayName == newName }
+                ?: return@invokeLater
 
             if (!toolWindow.isVisible) toolWindow.show()
             toolWindow.contentManager.setSelectedContent(content, true)
+            if (newName != null) content.displayName = newName
         }
 
         sendOk(request, context)

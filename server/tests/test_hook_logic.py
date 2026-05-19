@@ -128,7 +128,7 @@ class TestPayloadFields:
         "pid", "state", "hook_event", "cwd", "project_root",
         "session_id", "tool_name", "tty",
     }
-    WINDOW_FIELDS = {"window_id", "tab_name"}
+    WINDOW_FIELDS = {"window_id", "tab_name", "terminal_type"}
     WINDOW_EVENTS = {"SessionStart", "UserPromptSubmit"}
 
     def _make_payload(self, event, tool_name="", session_id="test1234"):
@@ -142,8 +142,9 @@ class TestPayloadFields:
             "tty": "/dev/pts/0",
         }
         if event in self.WINDOW_EVENTS:
-            payload["window_id"] = "0x1234"
-            payload["tab_name"] = f"cc-{session_id[:8]}"
+            payload["window_id"]     = "0x1234"
+            payload["tab_name"]      = f"cc-{session_id[:8]}"
+            payload["terminal_type"] = "generic"
         return payload
 
     def test_required_fields_present_for_tool_event(self):

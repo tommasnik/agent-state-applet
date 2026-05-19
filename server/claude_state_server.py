@@ -14,7 +14,8 @@ API contract (POST /agent, JSON body):
     session_id    str     Claude Code session ID
     subagent_count int    Number of currently active subagents (optional)
     window_id     str     X11 window ID (decimal) captured at session start
-    tab_name      str     IntelliJ terminal tab title (cc-<session_id[:8]>)
+    tab_name      str     terminal tab title (cc-<session_id[:8]>)
+    terminal_type str     'ghostty' | 'idea' | 'generic'
 
 POST /focus {pid}: switch desktop and raise the agent's IDE window.
 """
@@ -170,6 +171,68 @@ def pid_checker():
             write_state()
 
 
+def _focus_ghostty_tab(tab_name, window_id, tty="", ai_title=""):
+    """Cycle Ghostty tabs via Ctrl+Tab until the window title matches tab_name.
+
+    Strategy: rename the target tab to tab_name via its PTY (stable identifier),
+    cycle until found, then restore the AI title so the tab stays human-readable.
+    """
+    try:
+        xid = int(window_id, 16) if str(window_id).startswith("0x") else int(str(window_id))
+    except (ValueError, TypeError):
+        return
+
+    def _write_pty(title):
+        if tty and tty.startswith("/dev/pts/"):
+            try:
+                with open(tty, "w") as f:
+                    f.write(f"\033]0;{title}\007")
+            except Exception:
+                pass
+
+    try:
+        # Rename target tab to stable identifier before cycling.
+        _write_pty(tab_name)
+        time.sleep(0.05)
+
+        from Xlib import display as xdisplay, X
+        from Xlib.ext import xtest
+
+        d   = xdisplay.Display(os.environ.get("DISPLAY", ":0"))
+        win = d.create_resource_object('window', xid)
+        NET_WM_NAME = d.intern_atom('_NET_WM_NAME')
+        UTF8_STRING = d.intern_atom('UTF8_STRING')
+
+        def get_title():
+            try:
+                prop = win.get_full_property(NET_WM_NAME, UTF8_STRING)
+                if prop and prop.value:
+                    return prop.value.decode('utf-8', errors='replace')
+                return win.get_wm_name() or ""
+            except Exception:
+                return ""
+
+        tab_keycode  = d.keysym_to_keycode(0xff09)  # XK_Tab
+        ctrl_keycode = d.keysym_to_keycode(0xffe3)  # XK_Control_L
+
+        for _ in range(20):
+            if tab_name in get_title():
+                break
+            xtest.fake_input(d, X.KeyPress,   ctrl_keycode)
+            xtest.fake_input(d, X.KeyPress,   tab_keycode)
+            xtest.fake_input(d, X.KeyRelease, tab_keycode)
+            xtest.fake_input(d, X.KeyRelease, ctrl_keycode)
+            d.sync()
+            time.sleep(0.15)
+        d.close()
+    except Exception:
+        pass
+    finally:
+        # Restore AI title so the tab stays human-readable after focusing.
+        if ai_title:
+            _write_pty(ai_title)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -239,11 +302,12 @@ class Handler(BaseHTTPRequestHandler):
                     "session_id": data.get("session_id", existing.get("session_id", "")),
                     "subagent_count": data.get("subagent_count", existing.get("subagent_count", 0)),
                     "started_at": existing.get("started_at", now),
-                    # window_id / tab_name: only overwrite with a non-empty value so that
-                    # a /clear (SessionStart on same PID) never erases a working window_id
-                    # when get_window_id_for_pid transiently returns "".
-                    "window_id":    data.get("window_id")    or existing.get("window_id",    ""),
-                    "tab_name":     data.get("tab_name")     or existing.get("tab_name",     ""),
+                    # window_id / tab_name / terminal_type: only overwrite with a non-empty
+                    # value so that a /clear (SessionStart on same PID) never erases a
+                    # working window_id when get_window_id_for_pid transiently returns "".
+                    "window_id":     data.get("window_id")     or existing.get("window_id",     ""),
+                    "tab_name":      data.get("tab_name")      or existing.get("tab_name",      ""),
+                    "terminal_type": data.get("terminal_type") or existing.get("terminal_type", ""),
                     "tty":          data.get("tty",          existing.get("tty",          "")),
                     "project_root": data.get("project_root", existing.get("project_root", "")),
                     # ai_title is set by ai_title_poller and never overwritten from hook
@@ -324,7 +388,7 @@ class Handler(BaseHTTPRequestHandler):
                         except ValueError:
                             pass
 
-                subprocess.Popen(["wmctrl", "-i", "-a", window_id], env=env)
+                subprocess.run(["wmctrl", "-i", "-a", window_id], env=env, timeout=2)
         except Exception:
             pass
 
@@ -334,17 +398,26 @@ class Handler(BaseHTTPRequestHandler):
                 if pid in agents:
                     agents[pid]["window_id"] = window_id
 
-        # Ask the IDEA plugin to switch to the correct terminal tab.
-        tab_name = agent.get("tab_name", "")
-        if tab_name and project_root:
-            project_name = project_root.rstrip("/").split("/")[-1]
-            try:
-                import urllib.request as _ur
-                import urllib.parse as _up
-                qs = _up.urlencode({"tabName": tab_name, "project": project_name})
-                _ur.urlopen(f"http://localhost:63342/api/terminalFocus?{qs}", timeout=1)
-            except Exception:
-                pass
+        # Switch to the correct terminal tab based on terminal type.
+        tab_name      = agent.get("tab_name", "")
+        terminal_type = agent.get("terminal_type", "")
+        if tab_name:
+            if terminal_type == "ghostty":
+                _focus_ghostty_tab(tab_name, window_id, agent.get("tty", ""), agent.get("ai_title", ""))
+            elif terminal_type in ("idea", "") and project_root:
+                # "idea" explicitly, or legacy agents without terminal_type → try IDEA plugin
+                project_name = project_root.rstrip("/").split("/")[-1]
+                try:
+                    import urllib.request as _ur
+                    import urllib.parse as _up
+                    ai_title = agent.get("ai_title", "")
+                    params = {"tabName": tab_name, "project": project_name}
+                    if ai_title:
+                        params["newName"] = ai_title
+                    qs = _up.urlencode(params)
+                    _ur.urlopen(f"http://localhost:63342/api/terminalFocus?{qs}", timeout=1)
+                except Exception:
+                    pass
 
         # Atomically acknowledge the focus: reset done/waiting agents to initialized
         # so the applet dot turns grey immediately without a separate /agent call.

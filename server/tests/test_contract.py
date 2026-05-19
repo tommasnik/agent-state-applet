@@ -102,13 +102,13 @@ class TestHookToServerContract:
         "session_id", "tool_name", "tty",
     }
     # Fields hook sends only on SessionStart / UserPromptSubmit
-    HOOK_WINDOW_SENDS = {"window_id", "tab_name"}
+    HOOK_WINDOW_SENDS = {"window_id", "tab_name", "terminal_type"}
 
     # Fields server stores per-agent (from do_POST source)
     SERVER_STORES = {
         "pid", "cwd", "state", "timestamp", "hook_event", "tool_name",
         "session_id", "subagent_count", "started_at",
-        "window_id", "tab_name", "tty", "project_root",
+        "window_id", "tab_name", "terminal_type", "tty", "project_root",
         "ai_title",
     }
 
@@ -140,7 +140,7 @@ class TestServerToAppletContract:
     SERVER_WRITES = {
         "pid", "cwd", "state", "timestamp", "hook_event", "tool_name",
         "session_id", "subagent_count", "started_at",
-        "window_id", "tab_name", "tty", "project_root",
+        "window_id", "tab_name", "terminal_type", "tty", "project_root",
         "ai_title",
     }
 

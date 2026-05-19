@@ -29,7 +29,9 @@ class TerminalRenameService : RestService() {
             val toolWindow = ToolWindowManager.getInstance(project)
                 .getToolWindow("Terminal") ?: return@invokeLater
             val content = toolWindow.contentManager.selectedContent ?: return@invokeLater
-            content.displayName = newName
+            // Tag the content with the stable cc-xxx identifier so terminalFocus can find
+            // it regardless of what displayName is set to later (AI title, user rename, etc).
+            content.putUserData(CC_TAB_KEY, newName)
         }
 
         sendOk(request, context)
