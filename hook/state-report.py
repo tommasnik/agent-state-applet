@@ -54,7 +54,7 @@ def get_window_id_for_pid(target_pid):
     windows_by_pid = {}
     try:
         r = subprocess.run(
-            ["wmctrl", "-l", "-p"], capture_output=True, text=True, timeout=2, env=env,
+            ["wmctrl", "-l", "-p"], capture_output=True, text=True, timeout=0.1, env=env,
         )
         for line in r.stdout.splitlines():
             parts = line.split(None, 4)
@@ -95,7 +95,7 @@ def get_window_id_for_pid(target_pid):
     try:
         r = subprocess.run(
             ["xprop", "-display", display, "-root", "_NET_ACTIVE_WINDOW"],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True, text=True, timeout=0.1,
         )
         for part in r.stdout.split():
             if part.startswith("0x"):
@@ -153,7 +153,7 @@ def post(payload):
             SERVER_URL, data=data,
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=2)
+        urllib.request.urlopen(req, timeout=0.1)
     except Exception:
         pass
 
@@ -216,7 +216,7 @@ def main():
                     import urllib.parse as _up
                     qs = _up.urlencode({"newName": tab, "project": project_name})
                     urllib.request.urlopen(
-                        f"http://localhost:63342/api/terminalRename?{qs}", timeout=1
+                        f"http://localhost:63342/api/terminalRename?{qs}", timeout=0.1
                     )
                 except Exception:
                     pass
