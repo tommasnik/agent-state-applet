@@ -43,13 +43,30 @@ class TestFindProjectRoot:
         subdir.mkdir()
         assert hook.find_project_root(str(subdir)) == str(tmp_path)
 
-    def test_nearest_ancestor_wins_over_outer(self, tmp_path):
-        """Inner marker (package.json) beats outer marker (.git)."""
+    def test_git_beats_inner_weak_marker(self, tmp_path):
+        """Strong marker (.git) at repo root wins over weak marker (package.json) in subdir."""
         (tmp_path / ".git").mkdir()
         inner = tmp_path / "frontend"
         inner.mkdir()
         (inner / "package.json").touch()
+        assert hook.find_project_root(str(inner)) == str(tmp_path)
+
+    def test_weak_marker_used_when_no_git(self, tmp_path):
+        """Weak marker (package.json) is used when there is no .git anywhere."""
+        inner = tmp_path / "frontend"
+        inner.mkdir()
+        (inner / "package.json").touch()
         assert hook.find_project_root(str(inner)) == str(inner)
+
+    def test_monorepo_reports_repo_root(self, tmp_path):
+        """Monorepo: cwd inside a subpackage should resolve to the repo root."""
+        (tmp_path / ".git").mkdir()
+        pkg = tmp_path / "packages" / "chat"
+        pkg.mkdir(parents=True)
+        (pkg / "package.json").touch()
+        src = pkg / "src"
+        src.mkdir()
+        assert hook.find_project_root(str(src)) == str(tmp_path)
 
     def test_falls_back_to_cwd_when_no_marker(self, tmp_path):
         subdir = tmp_path / "random"

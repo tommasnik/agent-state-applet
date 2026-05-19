@@ -25,7 +25,10 @@ _IDEA_MARKERS = (
     "pycharm", "webstorm", "goland", "clion", "rider",
 )
 
-_PROJECT_MARKERS = (".git", ".idea", "pyproject.toml", "package.json", "Cargo.toml", "go.mod", "pom.xml")
+# Strong markers identify the true repo root (SCM root takes precedence over
+# per-package files so that monorepos report the top-level name, not a subpackage).
+_STRONG_MARKERS = (".git",)
+_WEAK_MARKERS   = (".idea", "pyproject.toml", "package.json", "Cargo.toml", "go.mod", "pom.xml")
 
 
 def _is_idea_pid(pid):
@@ -103,15 +106,22 @@ def get_window_id_for_pid(target_pid):
 
 
 def find_project_root(cwd):
-    """Walk up from cwd to find the nearest directory that looks like a project root."""
+    """Walk up from cwd to find the project root.
+
+    Strong markers (.git) take priority over weak ones (package.json etc.) so
+    that monorepos report the repo root rather than a nested sub-package dir.
+    """
     path = cwd
     prev = None
+    weak_candidate = None
     while path and path != prev and path != "/":
-        if any(os.path.exists(os.path.join(path, m)) for m in _PROJECT_MARKERS):
+        if any(os.path.exists(os.path.join(path, m)) for m in _STRONG_MARKERS):
             return path
+        if weak_candidate is None and any(os.path.exists(os.path.join(path, m)) for m in _WEAK_MARKERS):
+            weak_candidate = path
         prev = path
         path = os.path.dirname(path)
-    return cwd
+    return weak_candidate or cwd
 
 
 def get_tty(pid):
