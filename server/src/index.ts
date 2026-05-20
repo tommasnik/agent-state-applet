@@ -21,7 +21,9 @@ import { createStatusRouter } from "./routes/status";
 import { createReviewsRouter } from "./routes/reviews";
 import configRouter from "./routes/config";
 import projectsRouter from "./routes/projects";
+import schedulesRouter from "./routes/schedules";
 import { initDb } from "./db";
+import { schedulerInit } from "./scheduler";
 
 const HOST = "127.0.0.1";
 const PORT = 7855;
@@ -62,6 +64,7 @@ app.use("/status", createStatusRouter(store));
 app.use("/reviews", createReviewsRouter(pendingReviews, writeState));
 app.use("/api", configRouter);
 app.use("/api", projectsRouter);
+app.use("/api", schedulesRouter);
 
 // Notify WebSocket clients on any state change
 const httpServer = http.createServer(app);
@@ -162,6 +165,7 @@ process.on("SIGINT", shutdown);
 
 // --- Start ---
 initDb();
+schedulerInit();
 restoreState();
 startPidChecker();
 startAiTitlePoller();

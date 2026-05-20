@@ -1,9 +1,10 @@
 ---
 id: TASK-8
 title: 'Scheduler — cron executor, Ghostty launcher, headless runner'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-20 05:23'
+updated_date: '2026-05-20 05:55'
 labels: []
 milestone: 'M3: Scheduling'
 dependencies:
@@ -60,10 +61,10 @@ const proc = spawn('claude', ['--print', prompt], {
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 POST /api/schedules vytvoří schedule a začne ho vykonávat v čase
-- [ ] #2 Ghostty se otevře v správném projektu
-- [ ] #3 Headless run výstup je uložen v DB
-- [ ] #4 POST /api/schedules/:id/run spustí okamžitě
-- [ ] #5 Cron jobs přežijí restart serveru (načtou se z DB)
-- [ ] #6 WebSocket streamúje výstup headless runu
+- [x] #1 POST /api/schedules vytvoří schedule a začne ho vykonávat v čase
+- [x] #2 Ghostty se otevře v správném projektu
+- [x] #3 Headless run výstup je uložen v DB
+- [x] #4 POST /api/schedules/:id/run spustí okamžitě
+- [x] #5 Cron jobs přežijí restart serveru (načtou se z DB)
+- [x] #6 WebSocket streamúje výstup headless runu
 <!-- AC:END -->
