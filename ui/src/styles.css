@@ -1,0 +1,38 @@
+:root {
+  --color-initialized: #808080;
+  --color-working: #f5a623;
+  --color-asking-user: #4a90d9;
+  --color-waiting-for-approval: #e07b00;
+  --color-done: #5cb85c;
+
+  --bg: #1e1e1e;
+  --bg-sidebar: #252525;
+  --bg-card: #2d2d2d;
+  --text: #e0e0e0;
+  --text-muted: #888;
+  --border: #3a3a3a;
+  --accent: #4a90d9;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}

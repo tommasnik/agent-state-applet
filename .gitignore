@@ -10,3 +10,6 @@ applet/core.js
 # TypeScript server build artifacts
 server/node_modules/
 server/dist/
+# React/Vite UI build artifacts
+ui/node_modules/
+ui/dist/
