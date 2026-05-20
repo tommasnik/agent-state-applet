@@ -1,0 +1,35 @@
+{
+  "name": "claude-state-server",
+  "version": "1.0.0",
+  "description": "Claude Code Agent State Server — TypeScript/Express rewrite",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.5",
+    "@types/ws": "^8.5.10",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.3.3"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    }
+  }
+}

@@ -7,3 +7,6 @@ idea-plugin/local.properties
 .idea/
 # Generated for Cinnamon by `make applet/core.js` (sed transform of shared/core.mjs)
 applet/core.js
+# TypeScript server build artifacts
+server/node_modules/
+server/dist/
