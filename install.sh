@@ -3,7 +3,6 @@ set -euo pipefail
 
 APPLET_UUID="claude-agent-state@tommasnik"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVER_SCRIPT="$SCRIPT_DIR/server/claude_state_server.py"
 SERVICE_DIR="$HOME/.config/systemd/user"
 SERVICE_NAME="claude-state-server.service"
 
@@ -46,11 +45,19 @@ echo ""
 # ---------------------------------------------------------------------------
 # [1/3] Server (common to both DEs)
 # ---------------------------------------------------------------------------
-chmod +x "$SERVER_SCRIPT"
+echo "[1/3] Building TypeScript server…"
+cd "$SCRIPT_DIR/server"
+npm install
+npm run build
+cd "$SCRIPT_DIR"
+
 mkdir -p "$SERVICE_DIR"
-sed "s|__SERVER_PATH__|$SERVER_SCRIPT|g" \
-    "$SCRIPT_DIR/server/claude-state-server.service.template" \
-    > "$SERVICE_DIR/$SERVICE_NAME"
+cp "$SCRIPT_DIR/systemd/claude-state-server.service" "$SERVICE_DIR/$SERVICE_NAME"
+# Resolve actual node path and patch ExecStart if needed
+NODE_BIN="$(command -v node 2>/dev/null || true)"
+if [[ -n "$NODE_BIN" && "$NODE_BIN" != "/usr/bin/node" ]]; then
+    sed -i "s|ExecStart=.*node dist/index.js|ExecStart=$NODE_BIN dist/index.js|" "$SERVICE_DIR/$SERVICE_NAME"
+fi
 
 systemctl --user daemon-reload
 systemctl --user enable "$SERVICE_NAME"

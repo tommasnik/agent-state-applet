@@ -1,10 +1,10 @@
 ---
 id: TASK-3
 title: TypeScript/Express server — přepsat claude_state_server.py
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-20 05:21'
-updated_date: '2026-05-20 05:28'
+updated_date: '2026-05-20 05:35'
 labels: []
 milestone: 'M1: Infrastructure'
 dependencies: []

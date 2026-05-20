@@ -1,0 +1,13 @@
+[Unit]
+Description=Claude Agent State Server (TypeScript)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/agent-state-applet/server
+ExecStart=/home/tom/.nvm/versions/node/v24.14.0/bin/node dist/index.js
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

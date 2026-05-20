@@ -2,7 +2,7 @@ APPLET_UUID    := claude-agent-state@tommasnik
 APPLET_DEST    := $(HOME)/.local/share/cinnamon/applets/$(APPLET_UUID)
 GNOME_EXT_DEST := $(HOME)/.local/share/gnome-shell/extensions/$(APPLET_UUID)
 
-.PHONY: reload applet gnome server test test-server test-render test-ui \
+.PHONY: reload applet gnome server server-restart server-logs test test-server test-render test-ui \
         install install-gnome install-cinnamon smoke logs-check check
 
 # Cinnamon dev reload
@@ -36,9 +36,14 @@ gnome:
 	gnome-extensions enable  "$(APPLET_UUID)"
 	@echo "GNOME extension reloaded"
 
-server:
+server: server-restart
+
+server-restart:
 	systemctl --user restart claude-state-server
 	@echo "server restarted (status: $$(systemctl --user is-active claude-state-server))"
+
+server-logs:
+	journalctl --user -u claude-state-server -f
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -46,7 +51,7 @@ server:
 test: test-server test-render test-ui
 
 test-server:
-	python3 -m pytest server/tests/ -v
+	cd server && npm test
 
 test-render:
 	node --test test/render.test.mjs
