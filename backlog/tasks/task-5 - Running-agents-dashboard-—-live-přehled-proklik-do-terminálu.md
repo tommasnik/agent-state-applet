@@ -1,10 +1,10 @@
 ---
 id: TASK-5
 title: Running agents dashboard — live přehled + proklik do terminálu
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-20 05:22'
-updated_date: '2026-05-20 05:41'
+updated_date: '2026-05-20 05:45'
 labels: []
 milestone: 'M2: Live Dashboard'
 dependencies:
@@ -108,12 +108,12 @@ Naše stavy → UI sekce:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Sekce 'Needs your attention' zobrazuje agenty ve stavu asking_user/waiting_for_approval s inline textem otázky
-- [ ] #2 Sekce 'Working' zobrazuje agenty ve stavu working/initialized s posledním řádkem logu
-- [ ] #3 Topbar stats (needs/working/idle) se aktualizují live
-- [ ] #4 Čas 'last Xs' se aktualizuje každou sekundu bez re-renderu celé stránky
-- [ ] #5 Klik na kartu otevře AgentTerminalModal s meta gridem a log výstupem
-- [ ] #6 'Attach terminal →' volá POST /api/focus a přenese fokus na správné okno
-- [ ] #7 Quick reply textarea se zobrazí pouze u needs-input agentů
-- [ ] #8 Idle a done agenti se v Active view nezobrazují
+- [x] #1 Sekce 'Needs your attention' zobrazuje agenty ve stavu asking_user/waiting_for_approval s inline textem otázky
+- [x] #2 Sekce 'Working' zobrazuje agenty ve stavu working/initialized s posledním řádkem logu
+- [x] #3 Topbar stats (needs/working/idle) se aktualizují live
+- [x] #4 Čas 'last Xs' se aktualizuje každou sekundu bez re-renderu celé stránky
+- [x] #5 Klik na kartu otevře AgentTerminalModal s meta gridem a log výstupem
+- [x] #6 'Attach terminal →' volá POST /api/focus a přenese fokus na správné okno
+- [x] #7 Quick reply textarea se zobrazí pouze u needs-input agentů
+- [x] #8 Idle a done agenti se v Active view nezobrazují
 <!-- AC:END -->
