@@ -66,6 +66,20 @@ ClaudeAgentStateApplet.prototype = {
             onClick: function(pid, agent, action) { self._onClick(pid, agent, action); },
         });
 
+        // Dashboard button — always visible, opens web UI at :7855.
+        let dashBtn = new St.Label({
+            text:        "⚙",
+            style:       "color: #7ecfff; font-size: 20px; padding: 0 10px;",
+            reactive:    true,
+            track_hover: true,
+            y_align:     Clutter.ActorAlign.CENTER,
+        });
+        dashBtn.connect("button-press-event", function() {
+            Util.spawn(["xdg-open", "http://127.0.0.1:7855/"]);
+            return Clutter.EVENT_STOP;
+        });
+
+        this.actor.add_actor(dashBtn);
         this.actor.add_actor(this._indicator.box);
         this.actor.set_style("padding: 0;");
     },

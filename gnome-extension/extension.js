@@ -62,6 +62,19 @@ class ClaudeIndicator extends PanelMenu.Button {
             onClick: (pid, agent, action) => self._onClick(pid, agent, action),
         });
 
+        // Dashboard button — always visible, opens web UI at :7855.
+        const dashBtn = new St.Label({
+            text:    '⚙',
+            style:   'color: #7ecfff; font-size: 20px; padding: 0 10px;',
+            reactive: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        dashBtn.connect('button-press-event', () => {
+            Util.spawn(['xdg-open', 'http://127.0.0.1:7855/']);
+            return Clutter.EVENT_STOP;
+        });
+
+        this.add_child(dashBtn);
         this.add_child(this._indicator.box);
         this.set_style('padding: 0;');
 
