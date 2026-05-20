@@ -29,11 +29,17 @@ export function runInteractive(
 ): number {
   const runId = insertRun(scheduleId);
 
+  const escapedPath = projectPath.replace(/'/g, "'\\''");
+  const escapedPrompt = prompt.replace(/'/g, "'\\''");
   const child = spawn(
     "ghostty",
-    [`--working-directory=${projectPath}`, "-e", "claude", "--prompt", prompt],
+    [`--working-directory=${projectPath}`, "-e", "bash", "-lic", `cd '${escapedPath}' && exec claude '${escapedPrompt}'`],
     { detached: true, stdio: "ignore" }
   );
+  child.on("error", (err) => {
+    console.error(`[runner] ghostty launch failed: ${err.message}`);
+    finalizeRun(runId, "failed", `Launch failed: ${err.message}`);
+  });
   child.unref();
 
   return runId;
