@@ -71,7 +71,11 @@ app.use("/api", promptsRouter);
 
 // Notify WebSocket clients on any state change
 const httpServer = http.createServer(app);
-const wss = createWsServer(httpServer);
+const wss = createWsServer(httpServer, () => ({
+  agents: store.snapshot(),
+  reviews: Array.from(pendingReviews.values()),
+  updated_at: Date.now() / 1000,
+}));
 
 store.onChange((agents) => {
   const reviews = Array.from(pendingReviews.values());

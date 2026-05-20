@@ -1,8 +1,8 @@
 :root {
   --color-initialized: #808080;
-  --color-working: #f5a623;
-  --color-asking-user: #4a90d9;
-  --color-waiting-for-approval: #e07b00;
+  --color-working: #e8c000;
+  --color-asking-user: #4499ff;
+  --color-waiting-for-approval: #ff2222;
   --color-done: #5cb85c;
 
   --bg: #1e1e1e;

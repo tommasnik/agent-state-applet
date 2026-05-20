@@ -5,14 +5,21 @@ import type { AgentsDict } from "./agents";
 
 let _wss: WebSocketServer | null = null;
 
-export function createWsServer(httpServer: Server): WebSocketServer {
+export function createWsServer(
+  httpServer: Server,
+  getInitialState?: () => object
+): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
   wss.on("connection", (ws: WebSocket, _req: IncomingMessage) => {
-    // Send a ping/pong to keep alive, nothing else needed on connect
-    ws.on("error", () => {
-      // ignore client errors
-    });
+    ws.on("error", () => {});
+    if (getInitialState) {
+      try {
+        ws.send(JSON.stringify(getInitialState()));
+      } catch {
+        // ignore
+      }
+    }
   });
 
   _wss = wss;
