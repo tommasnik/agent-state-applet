@@ -573,6 +573,19 @@ export function createIndicator(opts) {
         return Clutter && Clutter.EVENT_STOP != null ? Clutter.EVENT_STOP : true;
     }
 
+    // Dashboard button — always visible at the left edge, opens web UI at :7855.
+    const dashBtn = new St.Label({
+        style: "color: rgba(255,255,255,0.55); font-size: 14px; padding: 0 5px;",
+        reactive:    true,
+        track_hover: true,
+    });
+    if (dashBtn.set_text) dashBtn.set_text("⊞");
+    dashBtn.connect("button-press-event", function(_actor, event) {
+        let btn = event && event.get_button ? event.get_button() : 1;
+        if (btn === 1 && host.spawn) host.spawn(["xdg-open", "http://127.0.0.1:7855/"]);
+        return clickEventReturn();
+    });
+
     function render(agents) {
         try { deps.GLib.spawn_command_line_async('sh -c "echo render n=' + Object.keys(agents).length + ' >> /tmp/claude-flash.log"'); } catch (_) {}
         lastAgents = agents;
@@ -636,6 +649,17 @@ export function createIndicator(opts) {
         transient = [];
         let children = box.get_children ? box.get_children() : [];
         children.forEach(function(c) { if (box.remove_child) box.remove_child(c); });
+
+        // Dashboard button is always first.
+        box.add_child(dashBtn);
+        if (groups.length > 0) {
+            let dashSep = new St.Widget({
+                style: "width: 1px; background-color: " + cfg.separatorColor + ";"
+                     + " height: " + ph + "px; margin: 0 2px;",
+            });
+            box.add_child(dashSep);
+            transient.push(dashSep);
+        }
 
         // Build one vertical block per group: label on top, balls row below.
         let now = Date.now() / 1000;
@@ -741,6 +765,7 @@ export function createIndicator(opts) {
             entries[pid].ball.destroy();
         }
         entries = {};
+        try { dashBtn.destroy(); } catch (_) {}
     }
 
     // Initial render
