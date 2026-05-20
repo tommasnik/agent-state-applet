@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useEffect, useMemo, useCallback, useState } from "react";
 import { useAgentsStore, stateColor, stateLabel } from "../store/agents";
 import type { Agent } from "../store/agents";
 
@@ -81,10 +81,9 @@ function useNow(): number {
 interface AgentRowProps {
   agent: Agent;
   now: number;
-  onClick: () => void;
 }
 
-function AgentRow({ agent, now, onClick }: AgentRowProps) {
+function AgentRow({ agent, now }: AgentRowProps) {
   const color = stateColor(agent.state);
   const label = stateLabel(agent.state);
   const title = sessionTitle(agent);
@@ -92,8 +91,16 @@ function AgentRow({ agent, now, onClick }: AgentRowProps) {
   const isAnimated = agent.state === "working" || agent.state === "initialized";
   const needsInput = agent.state === "asking_user" || agent.state === "waiting_for_approval";
 
+  const handleFocus = useCallback(() => {
+    fetch("/api/focus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pid: agent.pid }),
+    }).catch(() => {});
+  }, [agent.pid]);
+
   return (
-    <button className={`agent-row${needsInput ? " agent-row--needs-input" : ""}`} onClick={onClick}>
+    <button className={`agent-row${needsInput ? " agent-row--needs-input" : ""}`} onClick={handleFocus}>
       <span
         className={`agent-row-dot${isAnimated ? " agent-row-dot--pulse" : ""}`}
         style={{ background: color }}
@@ -123,10 +130,9 @@ function AgentRow({ agent, now, onClick }: AgentRowProps) {
 interface ProjectColumnProps {
   group: ProjectGroup;
   now: number;
-  onOpen: (pid: string) => void;
 }
 
-function ProjectColumn({ group, now, onOpen }: ProjectColumnProps) {
+function ProjectColumn({ group, now }: ProjectColumnProps) {
   return (
     <div className="project-col">
       <div className="project-col-head">
@@ -139,90 +145,8 @@ function ProjectColumn({ group, now, onOpen }: ProjectColumnProps) {
             key={agent.pid}
             agent={agent}
             now={now}
-            onClick={() => onOpen(String(agent.pid))}
           />
         ))}
-      </div>
-    </div>
-  );
-}
-
-// ----------------------------------------------------------------
-// AgentDetailModal
-// ----------------------------------------------------------------
-
-interface ModalProps {
-  agent: Agent;
-  now: number;
-  onClose: () => void;
-}
-
-function AgentDetailModal({ agent, now, onClose }: ModalProps) {
-  const color = stateColor(agent.state);
-  const name = projectName(agent.project_root);
-  const title = sessionTitle(agent);
-
-  const handleAttach = useCallback(() => {
-    fetch("/api/focus", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pid: agent.pid }),
-    }).catch(() => {});
-    onClose();
-  }, [agent.pid, onClose]);
-
-  const handleBackdrop = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) onClose();
-    },
-    [onClose]
-  );
-
-  return (
-    <div className="modal-backdrop" onClick={handleBackdrop}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span className="modal-status-dot" style={{ background: color }} />
-          <div className="modal-title">
-            <span>{name}</span>
-            {" · "}
-            {title}
-          </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-
-        <div className="modal-body">
-          <div className="modal-meta">
-            <span className="modal-meta-k">Status</span>
-            <span className="modal-meta-v" style={{ color }}>{stateLabel(agent.state)}</span>
-
-            <span className="modal-meta-k">Terminal</span>
-            <span className="modal-meta-v">{agent.tab_name || "—"}</span>
-
-            <span className="modal-meta-k">Started</span>
-            <span className="modal-meta-v">
-              {agent.started_at ? timeAgo(now, agent.started_at * 1000) + " ago" : "—"}
-            </span>
-
-            <span className="modal-meta-k">Last event</span>
-            <span className="modal-meta-v">
-              {agent.timestamp ? timeAgo(now, agent.timestamp * 1000) + " ago" : "—"}
-            </span>
-
-            {agent.subagent_count > 0 && (
-              <>
-                <span className="modal-meta-k">Subagents</span>
-                <span className="modal-meta-v">{agent.subagent_count}</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="modal-foot">
-          <button className="btn" onClick={onClose}>Close</button>
-          <div style={{ flex: 1 }} />
-          <button className="btn btn-primary" onClick={handleAttach}>Go to terminal →</button>
-        </div>
       </div>
     </div>
   );
@@ -235,10 +159,8 @@ function AgentDetailModal({ agent, now, onClose }: ModalProps) {
 export function AgentsPage() {
   const { agents, connected } = useAgentsStore();
   const now = useNow();
-  const [openPid, setOpenPid] = useState<string | null>(null);
 
   const groups = useMemo(() => buildGroups(agents), [agents]);
-  const openAgent = openPid != null ? agents[openPid] : null;
 
   return (
     <div className="agents-page">
@@ -258,18 +180,9 @@ export function AgentsPage() {
               key={group.key}
               group={group}
               now={now}
-              onOpen={setOpenPid}
             />
           ))}
         </div>
-      )}
-
-      {openAgent && (
-        <AgentDetailModal
-          agent={openAgent}
-          now={now}
-          onClose={() => setOpenPid(null)}
-        />
       )}
     </div>
   );

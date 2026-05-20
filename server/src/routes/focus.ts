@@ -119,11 +119,21 @@ export function createFocusRouter(store: AgentStore, writeState: WriteStateFn): 
       // Ghostty tab cycling is left as a future enhancement (requires pyatspi/Xlib)
     }
 
+    // Emit D-Bus signal so the applet flashes the window immediately
+    if (windowId) {
+      spawnSync("dbus-send", [
+        "--session",
+        "--type=signal",
+        "/org/claude/State",
+        "org.claude.State.FlashWindow",
+        `string:${windowId}`,
+      ], { env, timeout: 1000 });
+    }
+
     // Reset done/waiting state to initialized after focus
     const currentAgent = store.get(pid);
     if (currentAgent && (currentAgent.state === "done" || currentAgent.state === "waiting_for_approval")) {
       store.setState(pid, "initialized");
-      writeState();
     }
 
     res.json({ ok: true, window_id: windowId });

@@ -82,6 +82,28 @@ ClaudeAgentStateApplet.prototype = {
         this.actor.add_actor(dashBtn);
         this.actor.add_actor(this._indicator.box);
         this.actor.set_style("padding: 0;");
+
+        // Listen for FlashWindow D-Bus signals emitted by the server after web UI focus
+        this._dbusFlashId = Gio.DBus.session.signal_subscribe(
+            null,
+            "org.claude.State",
+            "FlashWindow",
+            "/org/claude/State",
+            null,
+            Gio.DBusSignalFlags.NONE,
+            function(_conn, _sender, _path, _iface, _signal, params) {
+                try {
+                    let xid = params.get_child_value(0).get_string()[0];
+                    if (xid) {
+                        Mainloop.timeout_add(300, function() {
+                            self._indicator.flashWindow(xid);
+                            return false;
+                        });
+                    }
+                } catch (_) {}
+            },
+            null
+        );
     },
 
     _panelPosition: function() {
@@ -160,6 +182,10 @@ ClaudeAgentStateApplet.prototype = {
     },
 
     on_applet_removed_from_panel: function() {
+        if (this._dbusFlashId) {
+            Gio.DBus.session.signal_unsubscribe(this._dbusFlashId);
+            this._dbusFlashId = 0;
+        }
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;
