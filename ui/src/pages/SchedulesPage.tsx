@@ -104,6 +104,34 @@ function buildCron(date: string, time: string, recurrence: string): string {
   return `${min} ${hour} ${day} ${month} *`;
 }
 
+function parseCron(cron: string): { date: string; time: string; recurrence: string } {
+  const parts = cron.trim().split(/\s+/);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (parts.length !== 5) return { date: defaultDate(), time: defaultTime(), recurrence: "once" };
+  const [min, hour, day, month, dow] = parts;
+  const time = `${pad(parseInt(hour) || 0)}:${pad(parseInt(min) || 0)}`;
+  if (day === "*" && month === "*") {
+    // daily or weekly
+    const now = new Date();
+    if (dow !== "*") {
+      // weekly — find next occurrence of that weekday
+      const target = parseInt(dow);
+      const d = new Date(now);
+      d.setDate(d.getDate() + ((target - d.getDay() + 7) % 7 || 7));
+      return { date: d.toISOString().slice(0, 10), time, recurrence: "weekly" };
+    }
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    return { date: d.toISOString().slice(0, 10), time, recurrence: "daily" };
+  }
+  // once — reconstruct date from day+month, use current or next year
+  const now = new Date();
+  const year = now.getFullYear();
+  const d = new Date(year, parseInt(month) - 1, parseInt(day));
+  if (d < now) d.setFullYear(year + 1);
+  return { date: d.toISOString().slice(0, 10), time, recurrence: "once" };
+}
+
 function defaultDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -199,21 +227,24 @@ function RunDetailModal({ schedule, run, onClose, onRerun }: RunDetailModalProps
 
 interface SchedulerModalProps {
   projects: Project[];
+  initialSchedule?: Schedule;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 }
 
-function SchedulerModal({ projects, onClose, onCreated }: SchedulerModalProps) {
-  const [projectPath, setProjectPath] = useState(projects[0]?.path ?? "");
-  const [title, setTitle] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [whenDate, setWhenDate] = useState(defaultDate);
-  const [whenTime, setWhenTime] = useState(defaultTime);
-  const [recurrence, setRecurrence] = useState("once");
-  const [type, setType] = useState<"interactive" | "headless">("headless");
+function SchedulerModal({ projects, initialSchedule, onClose, onSaved }: SchedulerModalProps) {
+  const parsed = initialSchedule ? parseCron(initialSchedule.cron) : null;
+  const [projectPath, setProjectPath] = useState(initialSchedule?.project_path ?? projects[0]?.path ?? "");
+  const [title, setTitle] = useState(initialSchedule?.name ?? "");
+  const [prompt, setPrompt] = useState(initialSchedule?.prompt ?? "");
+  const [whenDate, setWhenDate] = useState(parsed?.date ?? defaultDate());
+  const [whenTime, setWhenTime] = useState(parsed?.time ?? defaultTime());
+  const [recurrence, setRecurrence] = useState(parsed?.recurrence ?? "once");
+  const [type, setType] = useState<"interactive" | "headless">(initialSchedule?.type ?? "headless");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isEdit = !!initialSchedule;
   const canSubmit = prompt.trim().length > 0 && !submitting;
 
   const handleBackdrop = useCallback(
@@ -235,10 +266,12 @@ function SchedulerModal({ projects, onClose, onCreated }: SchedulerModalProps) {
         prompt: prompt.trim(),
         cron,
         type,
-        enabled: 1,
+        enabled: initialSchedule?.enabled ?? true,
       };
-      const resp = await fetch("/api/schedules", {
-        method: "POST",
+      const url = isEdit ? `/api/schedules/${initialSchedule!.id}` : "/api/schedules";
+      const method = isEdit ? "PUT" : "POST";
+      const resp = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -247,7 +280,7 @@ function SchedulerModal({ projects, onClose, onCreated }: SchedulerModalProps) {
         setError((data as { error?: string }).error ?? `HTTP ${resp.status}`);
         return;
       }
-      onCreated();
+      onSaved();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -259,7 +292,7 @@ function SchedulerModal({ projects, onClose, onCreated }: SchedulerModalProps) {
     <div className="modal-backdrop" onClick={handleBackdrop}>
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <div className="modal-title">Schedule a new agent</div>
+          <div className="modal-title">{isEdit ? "Edit schedule" : "Schedule a new agent"}</div>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
@@ -360,7 +393,7 @@ function SchedulerModal({ projects, onClose, onCreated }: SchedulerModalProps) {
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn btn-primary" disabled={!canSubmit} onClick={submit}>
-            {submitting ? "Scheduling…" : "Schedule"}
+            {submitting ? (isEdit ? "Saving…" : "Scheduling…") : (isEdit ? "Save" : "Schedule")}
           </button>
         </div>
       </div>
@@ -378,9 +411,12 @@ interface ScheduleCardProps {
   onToggle: () => void;
   onOpenRun: (run: RunRow) => void;
   onToggleEnabled: (enabled: boolean) => void;
+  onRunNow: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }
 
-function ScheduleCard({ schedule, isOpen, onToggle, onOpenRun, onToggleEnabled }: ScheduleCardProps) {
+function ScheduleCard({ schedule, isOpen, onToggle, onOpenRun, onToggleEnabled, onRunNow, onEdit, onDelete }: ScheduleCardProps) {
   const color = projectColor(schedule.project_path);
   const basename = projectBasename(schedule.project_path);
   const lastRun = schedule.last_run;
@@ -388,6 +424,7 @@ function ScheduleCard({ schedule, isOpen, onToggle, onOpenRun, onToggleEnabled }
 
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [runsLoaded, setRunsLoaded] = useState(false);
+  const [running, setRunning] = useState(false);
 
   useEffect(() => {
     if (!isOpen || runsLoaded) return;
@@ -407,6 +444,18 @@ function ScheduleCard({ schedule, isOpen, onToggle, onOpenRun, onToggleEnabled }
 
   function handleEnabledClick(e: React.MouseEvent) {
     e.stopPropagation();
+  }
+
+  async function handleRunNow(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (running) return;
+    setRunning(true);
+    try {
+      await fetch(`/api/schedules/${schedule.id}/run`, { method: "POST" });
+      onRunNow();
+    } finally {
+      setRunning(false);
+    }
   }
 
   return (
@@ -444,6 +493,31 @@ function ScheduleCard({ schedule, isOpen, onToggle, onOpenRun, onToggleEnabled }
             <span className="schedule-no-runs">No runs yet</span>
           )}
         </div>
+        <button
+          className="btn"
+          style={{ fontSize: 12, padding: "2px 10px", marginRight: 4 }}
+          onClick={handleRunNow}
+          disabled={running}
+          title="Run now"
+        >
+          {running ? "…" : "▶ Run now"}
+        </button>
+        <button
+          className="btn"
+          style={{ fontSize: 12, padding: "2px 8px", marginRight: 4 }}
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          title="Edit schedule"
+        >
+          Edit
+        </button>
+        <button
+          className="btn btn-danger"
+          style={{ fontSize: 12, padding: "2px 8px", marginRight: 4 }}
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="Delete schedule"
+        >
+          Delete
+        </button>
         <svg
           className={`chevron ${isOpen ? "open" : ""}`}
           viewBox="0 0 16 16"
@@ -520,6 +594,7 @@ export function SchedulesPage() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [openRun, setOpenRun] = useState<{ schedule: Schedule; run: RunRow } | null>(null);
   const [showScheduler, setShowScheduler] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
 
   const loadSchedules = useCallback(() => {
     fetch("/api/schedules")
@@ -568,6 +643,14 @@ export function SchedulesPage() {
     } catch {/* ignore */}
   }
 
+  async function handleDelete(schedule: Schedule) {
+    if (!window.confirm(`Delete schedule "${schedule.name}"?`)) return;
+    try {
+      await fetch(`/api/schedules/${schedule.id}`, { method: "DELETE" });
+      loadSchedules();
+    } catch {/* ignore */}
+  }
+
   async function handleRerun(scheduleId: number) {
     try {
       await fetch(`/api/schedules/${scheduleId}/run`, { method: "POST" });
@@ -598,6 +681,9 @@ export function SchedulesPage() {
               onToggle={() => toggleExpand(s.id)}
               onOpenRun={(run) => setOpenRun({ schedule: s, run })}
               onToggleEnabled={(enabled) => handleToggleEnabled(s, enabled)}
+              onRunNow={loadSchedules}
+              onEdit={() => setEditingSchedule(s)}
+              onDelete={() => handleDelete(s)}
             />
           ))}
         </div>
@@ -616,8 +702,20 @@ export function SchedulesPage() {
         <SchedulerModal
           projects={projects}
           onClose={() => setShowScheduler(false)}
-          onCreated={() => {
+          onSaved={() => {
             setShowScheduler(false);
+            loadSchedules();
+          }}
+        />
+      )}
+
+      {editingSchedule && (
+        <SchedulerModal
+          projects={projects}
+          initialSchedule={editingSchedule}
+          onClose={() => setEditingSchedule(null)}
+          onSaved={() => {
+            setEditingSchedule(null);
             loadSchedules();
           }}
         />

@@ -398,6 +398,16 @@
   opacity: 0.9;
 }
 
+.btn-danger {
+  background: rgba(248, 81, 73, 0.15);
+  border-color: #f85149;
+  color: #f85149;
+}
+
+.btn-danger:hover {
+  background: rgba(248, 81, 73, 0.3);
+}
+
 .sidebar {
   width: 180px;
   background: var(--bg-sidebar);
