@@ -1,10 +1,10 @@
 ---
 id: TASK-9
 title: Schedules UI — správa plánovaných agentů
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-20 05:23'
-updated_date: '2026-05-20 05:41'
+updated_date: '2026-05-20 06:00'
 labels: []
 milestone: 'M3: Scheduling'
 dependencies:
@@ -114,13 +114,13 @@ type RunRecord = {
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Schedules se zobrazují jako accordion karty s recurrence badge a barvou projektu
-- [ ] #2 Klik na header rozbalí/sbalí run history a prompt
-- [ ] #3 Run history tabulka zobrazuje When/Status/Duration/Cost/Output sloupy
-- [ ] #4 Klik na řádek runu otevře RunDetailModal s plným inputem a outputem
-- [ ] #5 'Re-run now' v RunDetailModal volá POST /api/schedules/{id}/run
-- [ ] #6 SchedulerModal má pole: Project/Title/Prompt/Date/Time/Recurrence/Model (bez raw cron)
-- [ ] #7 Submit je disabled pokud prompt prázdný nebo datum nevalidní
-- [ ] #8 Po vytvoření se schedule okamžitě objeví v seznamu
-- [ ] #9 enable/disable schedule funguje bez smazání (toggle v header nebo detail)
+- [x] #1 Schedules se zobrazují jako accordion karty s recurrence badge a barvou projektu
+- [x] #2 Klik na header rozbalí/sbalí run history a prompt
+- [x] #3 Run history tabulka zobrazuje When/Status/Duration/Cost/Output sloupy
+- [x] #4 Klik na řádek runu otevře RunDetailModal s plným inputem a outputem
+- [x] #5 'Re-run now' v RunDetailModal volá POST /api/schedules/{id}/run
+- [x] #6 SchedulerModal má pole: Project/Title/Prompt/Date/Time/Recurrence/Model (bez raw cron)
+- [x] #7 Submit je disabled pokud prompt prázdný nebo datum nevalidní
+- [x] #8 Po vytvoření se schedule okamžitě objeví v seznamu
+- [x] #9 enable/disable schedule funguje bez smazání (toggle v header nebo detail)
 <!-- AC:END -->
