@@ -61,6 +61,7 @@ if (fs.existsSync(uiDistPath)) {
 // Routes
 app.use("/agent", createAgentRouter(store, writeState));
 app.use("/focus", createFocusRouter(store, writeState));
+app.use("/api/focus", createFocusRouter(store, writeState));
 app.use("/status", createStatusRouter(store));
 app.use("/reviews", createReviewsRouter(pendingReviews, writeState));
 app.use("/api", configRouter);

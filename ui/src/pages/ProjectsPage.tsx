@@ -67,7 +67,8 @@ function AgentTerminalModal({ agent, onClose }: ModalProps) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pid: agent.pid }),
     }).catch(() => {/* ignore */});
-  }, [agent.pid]);
+    onClose();
+  }, [agent.pid, onClose]);
 
   const handleBackdrop = useCallback(
     (e: React.MouseEvent) => {
@@ -111,7 +112,7 @@ function AgentTerminalModal({ agent, onClose }: ModalProps) {
         <div className="modal-foot">
           <button className="btn" onClick={onClose}>Close</button>
           <div style={{ flex: 1 }} />
-          <button className="btn btn-primary" onClick={handleAttach}>Attach terminal →</button>
+          <button className="btn btn-primary" onClick={handleAttach}>Go to terminal →</button>
         </div>
       </div>
     </div>

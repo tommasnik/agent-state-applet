@@ -72,7 +72,8 @@ function AgentTerminalModal({ agent, now, onClose }: ModalProps) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pid: agent.pid }),
     }).catch(() => {/* ignore */});
-  }, [agent.pid]);
+    onClose();
+  }, [agent.pid, onClose]);
 
   // Close on backdrop click
   const handleBackdrop = useCallback(
@@ -156,7 +157,7 @@ function AgentTerminalModal({ agent, now, onClose }: ModalProps) {
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn btn-primary" onClick={handleAttach}>
-            Attach terminal →
+            Go to terminal →
           </button>
         </div>
       </div>
@@ -283,9 +284,17 @@ export function AgentsPage() {
     [agentList]
   );
 
+  const doneAgents = useMemo(
+    () =>
+      agentList
+        .filter((a) => a.state === "done")
+        .sort((a, b) => b.timestamp - a.timestamp),
+    [agentList]
+  );
+
   const openAgent = openPid != null ? agents[openPid] : null;
 
-  const hasAny = needsInputAgents.length > 0 || workingAgents.length > 0;
+  const hasAny = needsInputAgents.length > 0 || workingAgents.length > 0 || doneAgents.length > 0;
 
   return (
     <div className="agents-page">
@@ -330,6 +339,27 @@ export function AgentsPage() {
           </h2>
           <div className="working-cards">
             {workingAgents.map((agent) => (
+              <WorkingCard
+                key={agent.pid}
+                agent={agent}
+                now={now}
+                onOpen={() => setOpenPid(String(agent.pid))}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Done section */}
+      {doneAgents.length > 0 && (
+        <section className="active-section done">
+          <h2 className="active-section-title">
+            <span className="status-dot done" />
+            Done
+            <span className="section-count">{doneAgents.length}</span>
+          </h2>
+          <div className="working-cards">
+            {doneAgents.map((agent) => (
               <WorkingCard
                 key={agent.pid}
                 agent={agent}
