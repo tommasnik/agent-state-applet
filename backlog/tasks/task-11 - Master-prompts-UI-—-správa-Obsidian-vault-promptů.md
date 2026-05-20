@@ -1,9 +1,10 @@
 ---
 id: TASK-11
 title: Master prompts UI — správa Obsidian vault promptů
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-20 05:24'
+updated_date: '2026-05-20 06:20'
 labels: []
 milestone: 'M4: Config Management'
 dependencies:
@@ -50,8 +51,8 @@ Vault root = nakonfigurovaná cesta (defaultně `~/ai-docs/AI-docs/`), přidatel
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Zobrazuje se seznam .md souborů z vaultu
-- [ ] #2 Soubor lze editovat a uložit
-- [ ] #3 Usages (které projekty @include) jsou viditelné u každého promptu
-- [ ] #4 Stromová struktura adresářů je navigovatelná
+- [x] #1 Zobrazuje se seznam .md souborů z vaultu
+- [x] #2 Soubor lze editovat a uložit
+- [x] #3 Usages (které projekty @include) jsou viditelné u každého promptu
+- [x] #4 Stromová struktura adresářů je navigovatelná
 <!-- AC:END -->

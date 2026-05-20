@@ -22,6 +22,7 @@ import { createReviewsRouter } from "./routes/reviews";
 import configRouter from "./routes/config";
 import projectsRouter from "./routes/projects";
 import schedulesRouter from "./routes/schedules";
+import promptsRouter from "./routes/prompts";
 import { initDb } from "./db";
 import { schedulerInit } from "./scheduler";
 
@@ -65,6 +66,7 @@ app.use("/reviews", createReviewsRouter(pendingReviews, writeState));
 app.use("/api", configRouter);
 app.use("/api", projectsRouter);
 app.use("/api", schedulesRouter);
+app.use("/api", promptsRouter);
 
 // Notify WebSocket clients on any state change
 const httpServer = http.createServer(app);

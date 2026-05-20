@@ -1393,3 +1393,104 @@
 .pd-roots-input {
   flex: 1;
 }
+
+/* ---------------------------------------------------------------- */
+/* PromptsPage — vault tree                                          */
+/* ---------------------------------------------------------------- */
+
+.pt-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-right: 12px;
+  transition: color 0.1s, background 0.1s;
+}
+
+.pt-dir-row:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pt-chevron {
+  font-size: 8px;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+  display: inline-block;
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.pt-chevron.open {
+  transform: rotate(90deg);
+}
+
+.pt-dir-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pt-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-right: 12px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.pt-file-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.pt-file-row.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.pt-file-icon {
+  font-size: 16px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+}
+
+.pt-file-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-prompt-textarea {
+  min-height: 360px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
