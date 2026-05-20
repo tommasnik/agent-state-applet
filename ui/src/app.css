@@ -991,3 +991,405 @@
   text-overflow: ellipsis;
   color: var(--text-muted);
 }
+
+/* ---------------------------------------------------------------- */
+/* ProjectsPage — master-detail layout                               */
+/* ---------------------------------------------------------------- */
+
+.projects-page {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Left master panel */
+.projects-master {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.projects-master-head {
+  padding: 16px 16px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.projects-master-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.pm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  transition: background 0.1s, color 0.1s;
+  border-radius: 0;
+}
+
+.pm-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.pm-row.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.pm-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.pm-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-counts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pm-pip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  line-height: 1.4;
+}
+
+.pm-pip-needs {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.pm-pip-working {
+  background: rgba(63, 185, 80, 0.2);
+  color: #3fb950;
+}
+
+.pm-empty {
+  padding: 16px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Right detail panel */
+.projects-detail {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.pd-placeholder {
+  padding: 40px 24px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.pd-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Detail header */
+.pd-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.pd-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.pd-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.pd-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.pd-path {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.pd-path code {
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.pd-flags {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.pd-flag {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Detail blocks */
+.pd-block {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pd-block:last-child {
+  border-bottom: none;
+}
+
+.pd-block-head {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pd-block-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pd-edit-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+}
+
+/* Skills list */
+.pd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pd-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.pd-list-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pd-list-name {
+  flex: 1;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.pd-list-tag {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* CLAUDE.md editor */
+.pd-claude-md {
+  background: #141414;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
+.pd-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pd-editor-textarea {
+  min-height: 240px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.pd-editor-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Agents in project */
+.pd-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pd-agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  transition: background 0.1s, border-color 0.1s;
+  width: 100%;
+}
+
+.pd-agent:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.pd-agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pd-agent-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.pd-agent-title {
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-agent-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Project roots settings */
+.pd-roots-block {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.pd-roots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.pd-root-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.pd-root-path {
+  flex: 1;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-root-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.pd-root-remove:hover {
+  color: #f85149;
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.pd-roots-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pd-roots-input {
+  flex: 1;
+}

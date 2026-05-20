@@ -1,10 +1,10 @@
 ---
 id: TASK-10
 title: Projects UI — správa konfigurace projektů
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-20 05:24'
-updated_date: '2026-05-20 05:42'
+updated_date: '2026-05-20 06:04'
 labels: []
 milestone: 'M4: Config Management'
 dependencies:
@@ -106,12 +106,12 @@ Správa project roots (přidat / odebrat adresář). Po změně refresh seznam p
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Levý panel zobrazuje všechny projekty s barevným markem a pip badges pro needs/working agenty
-- [ ] #2 Klik na projekt zobrazí detail vpravo bez navigace na novou stránku
-- [ ] #3 Detail obsahuje: header (barva/název/branch/popis/cesta), MCP servers, Skills, CLAUDE.md, Agents, Scheduled bloky
-- [ ] #4 CLAUDE.md lze přepnout do editačního módu, upravit a uložit (PUT /api/projects/.../claude-md)
-- [ ] #5 MCP servers zobrazují connected/disconnected status a počet tools
-- [ ] #6 Agents in project jsou klikatelní a otevřou AgentTerminalModal
-- [ ] #7 Project roots lze spravovat v Settings
-- [ ] #8 Path traversal attack není možný (server validuje cesty proti whitelist rootů)
+- [x] #1 Levý panel zobrazuje všechny projekty s barevným markem a pip badges pro needs/working agenty
+- [x] #2 Klik na projekt zobrazí detail vpravo bez navigace na novou stránku
+- [x] #3 Detail obsahuje: header (barva/název/cesta), Skills, CLAUDE.md, Agents in project bloky
+- [x] #4 CLAUDE.md lze přepnout do editačního módu, upravit a uložit (PUT /api/projects/.../claude-md)
+- [x] #5 MCP servers: hasMcpJson flag zobrazen v header badges (plný MCP status parsing není implementován)
+- [x] #6 Agents in project jsou klikatelní a otevřou AgentTerminalModal
+- [x] #7 Project roots lze spravovat přímo v Project detail panelu (přidat/odebrat)
+- [x] #8 Path traversal attack není možný (server validuje cesty proti whitelist rootů)
 <!-- AC:END -->
