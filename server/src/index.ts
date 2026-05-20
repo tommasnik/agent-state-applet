@@ -19,6 +19,9 @@ import { createAgentRouter } from "./routes/agent";
 import { createFocusRouter } from "./routes/focus";
 import { createStatusRouter } from "./routes/status";
 import { createReviewsRouter } from "./routes/reviews";
+import configRouter from "./routes/config";
+import projectsRouter from "./routes/projects";
+import { initDb } from "./db";
 
 const HOST = "127.0.0.1";
 const PORT = 7855;
@@ -57,6 +60,8 @@ app.use("/agent", createAgentRouter(store, writeState));
 app.use("/focus", createFocusRouter(store, writeState));
 app.use("/status", createStatusRouter(store));
 app.use("/reviews", createReviewsRouter(pendingReviews, writeState));
+app.use("/api", configRouter);
+app.use("/api", projectsRouter);
 
 // Notify WebSocket clients on any state change
 const httpServer = http.createServer(app);
@@ -156,6 +161,7 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
 // --- Start ---
+initDb();
 restoreState();
 startPidChecker();
 startAiTitlePoller();

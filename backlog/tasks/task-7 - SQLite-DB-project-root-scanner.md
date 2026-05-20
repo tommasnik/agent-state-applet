@@ -1,9 +1,10 @@
 ---
 id: TASK-7
 title: SQLite DB + project root scanner
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-20 05:23'
+updated_date: '2026-05-20 05:50'
 labels: []
 milestone: 'M3: Scheduling'
 dependencies:
@@ -77,9 +78,9 @@ Funkce `scanProjects(roots: string[]): Project[]`
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 SQLite DB se vytvoří automaticky při prvním spuštění serveru
-- [ ] #2 GET /api/projects vrátí seznam projektů ze skenovaných rootů
-- [ ] #3 PUT /api/config uloží nové roots a následující GET /api/projects je použití
-- [ ] #4 Scanner ignoruje node_modules, .git, .venv adresáře
-- [ ] #5 config.json se vytvoří s defaulty (~/work/code, ~/code) pokud neexistuje
+- [x] #1 SQLite DB se vytvoří automaticky při prvním spuštění serveru
+- [x] #2 GET /api/projects vrátí seznam projektů ze skenovaných rootů
+- [x] #3 PUT /api/config uloží nové roots a následující GET /api/projects je použití
+- [x] #4 Scanner ignoruje node_modules, .git, .venv adresáře
+- [x] #5 config.json se vytvoří s defaulty (~/work/code, ~/code) pokud neexistuje
 <!-- AC:END -->
