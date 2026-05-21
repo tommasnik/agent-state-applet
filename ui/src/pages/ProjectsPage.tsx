@@ -127,10 +127,9 @@ interface ProjectDetailProps {
   project: Project;
   agents: Agent[];
   onOpenAgent: (agent: Agent) => void;
-  onConfigChange: () => void;
 }
 
-function ProjectDetail({ project, agents, onOpenAgent, onConfigChange }: ProjectDetailProps) {
+function ProjectDetail({ project, agents, onOpenAgent }: ProjectDetailProps) {
   const encoded = encodePath(project.path);
   const color = projectColor(project.path);
 
@@ -142,11 +141,6 @@ function ProjectDetail({ project, agents, onOpenAgent, onConfigChange }: Project
 
   // Skills state
   const [skills, setSkills] = useState<Skill[]>([]);
-
-  // Config state
-  const [config, setConfig] = useState<Config | null>(null);
-  const [newRoot, setNewRoot] = useState("");
-  const [savingConfig, setSavingConfig] = useState(false);
 
   // Load CLAUDE.md
   useEffect(() => {
@@ -167,14 +161,6 @@ function ProjectDetail({ project, agents, onOpenAgent, onConfigChange }: Project
       .then((data: Skill[]) => setSkills(data))
       .catch(() => setSkills([]));
   }, [encoded, project.hasSkills]);
-
-  // Load config
-  useEffect(() => {
-    fetch("/api/config")
-      .then((r) => r.json())
-      .then((data: Config) => setConfig(data))
-      .catch(() => {/* ignore */});
-  }, []);
 
   const handleEditStart = useCallback(() => {
     setEditContent(claudeMd ?? "");
@@ -199,43 +185,6 @@ function ProjectDetail({ project, agents, onOpenAgent, onConfigChange }: Project
       setSaving(false);
     }
   }, [encoded, editContent]);
-
-  const handleRemoveRoot = useCallback(async (root: string) => {
-    if (!config) return;
-    const next: Config = { projectRoots: config.projectRoots.filter((r) => r !== root) };
-    setSavingConfig(true);
-    try {
-      await fetch("/api/config", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
-      });
-      setConfig(next);
-      onConfigChange();
-    } catch {/* ignore */} finally {
-      setSavingConfig(false);
-    }
-  }, [config, onConfigChange]);
-
-  const handleAddRoot = useCallback(async () => {
-    if (!config || !newRoot.trim()) return;
-    const trimmed = newRoot.trim();
-    if (config.projectRoots.includes(trimmed)) return;
-    const next: Config = { projectRoots: [...config.projectRoots, trimmed] };
-    setSavingConfig(true);
-    try {
-      await fetch("/api/config", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
-      });
-      setConfig(next);
-      setNewRoot("");
-      onConfigChange();
-    } catch {/* ignore */} finally {
-      setSavingConfig(false);
-    }
-  }, [config, newRoot, onConfigChange]);
 
   return (
     <div className="pd-container">
@@ -330,43 +279,6 @@ function ProjectDetail({ project, agents, onOpenAgent, onConfigChange }: Project
         )}
       </section>
 
-      {/* Project roots settings */}
-      {config && (
-        <section className="pd-block pd-roots-block">
-          <div className="pd-block-head">Project roots</div>
-          <div className="pd-roots-list">
-            {config.projectRoots.map((root) => (
-              <div key={root} className="pd-root-row">
-                <code className="pd-root-path">{root}</code>
-                <button
-                  className="pd-root-remove"
-                  onClick={() => handleRemoveRoot(root)}
-                  disabled={savingConfig}
-                  aria-label={`Remove ${root}`}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="pd-roots-add">
-            <input
-              className="field-input pd-roots-input"
-              value={newRoot}
-              onChange={(e) => setNewRoot(e.target.value)}
-              placeholder="/home/user/code"
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddRoot(); }}
-            />
-            <button
-              className="btn btn-primary"
-              onClick={handleAddRoot}
-              disabled={savingConfig || !newRoot.trim()}
-            >
-              Add
-            </button>
-          </div>
-        </section>
-      )}
     </div>
   );
 }
@@ -375,6 +287,15 @@ function ProjectDetail({ project, agents, onOpenAgent, onConfigChange }: Project
 // ProjectsPage
 // ----------------------------------------------------------------
 
+function toTildePath(p: string): string {
+  const parts = p.split("/");
+  if (parts.length >= 3 && parts[1] === "home") {
+    const rel = parts.slice(3).join("/");
+    return rel ? `~/${rel}` : "~";
+  }
+  return p;
+}
+
 export function ProjectsPage() {
   const { agents } = useAgentsStore();
   const agentList = useMemo(() => Object.values(agents), [agents]);
@@ -382,6 +303,22 @@ export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [openAgent, setOpenAgent] = useState<Agent | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  // Config / project roots
+  const [showRootsPanel, setShowRootsPanel] = useState(false);
+  const [config, setConfig] = useState<Config | null>(null);
+  const [newRoot, setNewRoot] = useState("");
+  const [savingConfig, setSavingConfig] = useState(false);
+
+  const toggleGroup = useCallback((parent: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(parent)) next.delete(parent);
+      else next.add(parent);
+      return next;
+    });
+  }, []);
 
   const loadProjects = useCallback(() => {
     fetch("/api/projects")
@@ -399,7 +336,66 @@ export function ProjectsPage() {
     loadProjects();
   }, [loadProjects]);
 
+  const loadConfig = useCallback(() => {
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((data: Config) => setConfig(data))
+      .catch(() => {/* ignore */});
+  }, []);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
+  const handleRemoveRoot = useCallback(async (root: string) => {
+    if (!config) return;
+    const next: Config = { projectRoots: config.projectRoots.filter((r) => r !== root) };
+    setSavingConfig(true);
+    try {
+      await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      setConfig(next);
+      loadProjects();
+    } catch {/* ignore */} finally {
+      setSavingConfig(false);
+    }
+  }, [config, loadProjects]);
+
+  const handleAddRoot = useCallback(async () => {
+    if (!config || !newRoot.trim()) return;
+    const trimmed = newRoot.trim();
+    if (config.projectRoots.includes(trimmed)) return;
+    const next: Config = { projectRoots: [...config.projectRoots, trimmed] };
+    setSavingConfig(true);
+    try {
+      await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      setConfig(next);
+      setNewRoot("");
+      loadProjects();
+    } catch {/* ignore */} finally {
+      setSavingConfig(false);
+    }
+  }, [config, newRoot, loadProjects]);
+
   const selected = projects.find((p) => p.path === selectedPath) ?? null;
+
+  // Group projects by parent directory
+  const groupedProjects = useMemo(() => {
+    const groups = new Map<string, Project[]>();
+    for (const p of projects) {
+      const parent = p.path.split("/").slice(0, -1).join("/") || "/";
+      if (!groups.has(parent)) groups.set(parent, []);
+      groups.get(parent)!.push(p);
+    }
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [projects]);
 
   // Per-project agent counts
   function projectCounts(projectPath: string) {
@@ -422,27 +418,96 @@ export function ProjectsPage() {
       <aside className="projects-master">
         <div className="projects-master-head">
           Projects <span className="section-count">{projects.length}</span>
+          <button
+            className={`pm-settings-btn ${showRootsPanel ? "active" : ""}`}
+            onClick={() => setShowRootsPanel((v) => !v)}
+            aria-label="Project roots settings"
+            title="Project roots"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
         </div>
-        <div className="projects-master-list">
-          {projects.map((p) => {
-            const counts = projectCounts(p.path);
-            return (
+
+        {showRootsPanel && config && (
+          <div className="pm-roots-panel">
+            <div className="pm-roots-panel-title">Project roots</div>
+            <div className="pd-roots-list">
+              {config.projectRoots.map((root) => (
+                <div key={root} className="pd-root-row">
+                  <code className="pd-root-path">{root}</code>
+                  <button
+                    className="pd-root-remove"
+                    onClick={() => handleRemoveRoot(root)}
+                    disabled={savingConfig}
+                    aria-label={`Remove ${root}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {config.projectRoots.length === 0 && (
+                <div className="empty-state" style={{ padding: "4px 0" }}>No roots configured.</div>
+              )}
+            </div>
+            <div className="pd-roots-add">
+              <input
+                className="field-input pd-roots-input"
+                value={newRoot}
+                onChange={(e) => setNewRoot(e.target.value)}
+                placeholder="/home/user/code"
+                onKeyDown={(e) => { if (e.key === "Enter") handleAddRoot(); }}
+              />
               <button
-                key={p.path}
-                className={`pm-row ${p.path === selectedPath ? "active" : ""}`}
-                onClick={() => setSelectedPath(p.path)}
+                className="btn btn-primary"
+                onClick={handleAddRoot}
+                disabled={savingConfig || !newRoot.trim()}
               >
-                <span className="pm-mark" style={{ background: projectColor(p.path) }} />
-                <span className="pm-name">{p.name}</span>
-                <span className="pm-counts">
-                  {counts.needs > 0 && (
-                    <span className="pm-pip pm-pip-needs" title="Needs input">{counts.needs}</span>
-                  )}
-                  {counts.working > 0 && (
-                    <span className="pm-pip pm-pip-working" title="Working">{counts.working}</span>
-                  )}
-                </span>
+                Add
               </button>
+            </div>
+          </div>
+        )}
+
+        <div className="projects-master-list">
+          {groupedProjects.map(([parent, groupProjects]) => {
+            const collapsed = collapsedGroups.has(parent);
+            return (
+              <div key={parent} className="pm-group">
+                {groupedProjects.length > 1 && (
+                  <button
+                    className="pm-group-head"
+                    title={parent}
+                    onClick={() => toggleGroup(parent)}
+                  >
+                    <span className={`pm-group-arrow ${collapsed ? "collapsed" : ""}`}>▾</span>
+                    {toTildePath(parent)}
+                  </button>
+                )}
+                {!collapsed && groupProjects.map((p) => {
+                  const counts = projectCounts(p.path);
+                  return (
+                    <button
+                      key={p.path}
+                      className={`pm-row ${p.path === selectedPath ? "active" : ""}`}
+                      onClick={() => setSelectedPath(p.path)}
+                    >
+                      <span className="pm-mark" style={{ background: projectColor(p.path) }} />
+                      <span className="pm-name">{p.name}</span>
+                      <span className="pm-counts">
+                        {counts.needs > 0 && (
+                          <span className="pm-pip pm-pip-needs" title="Needs input">{counts.needs}</span>
+                        )}
+                        {counts.working > 0 && (
+                          <span className="pm-pip pm-pip-working" title="Working">{counts.working}</span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
           {projects.length === 0 && (
@@ -459,7 +524,6 @@ export function ProjectsPage() {
             project={selected}
             agents={selectedAgents}
             onOpenAgent={(a) => setOpenAgent(a)}
-            onConfigChange={loadProjects}
           />
         ) : (
           <div className="pd-placeholder">Select a project to view details.</div>

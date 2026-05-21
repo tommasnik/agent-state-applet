@@ -13,6 +13,7 @@ import {
   readAiTitle,
   STATE_FILE,
   ReviewMeta,
+  ScheduledEntry,
 } from "./stateFile";
 import { createWsServer, broadcastState } from "./ws";
 import { createAgentRouter } from "./routes/agent";
@@ -23,7 +24,7 @@ import configRouter from "./routes/config";
 import projectsRouter from "./routes/projects";
 import schedulesRouter from "./routes/schedules";
 import promptsRouter from "./routes/prompts";
-import { initDb } from "./db";
+import { initDb, getDb } from "./db";
 import { schedulerInit } from "./scheduler";
 
 const HOST = "127.0.0.1";
@@ -41,7 +42,10 @@ const pendingReviews = new Map<string, ReviewMeta>();
 function writeState(): void {
   const agents = store.snapshot();
   const reviews = Array.from(pendingReviews.values());
-  writeStateFile(agents, reviews);
+  const scheduled = getDb()
+    .prepare("SELECT id, name, project_path, cron, type, enabled FROM schedules WHERE enabled = 1")
+    .all() as ScheduledEntry[];
+  writeStateFile(agents, reviews, scheduled);
 }
 
 // --- Express app ---

@@ -143,7 +143,7 @@ export function describeRender(agents, panelHeight, cfg) {
     let groupMap   = {};
     for (let i = 0; i < sorted.length; i++) {
         let agent = sorted[i];
-        let gkey  = agent.project_root || agent.cwd || "";
+        let gkey  = (agent.project_root || agent.cwd || "") + "|" + (agent.terminal_type || "");
         if (!groupMap[gkey]) {
             groupMap[gkey] = [];
             groupOrder.push(gkey);
@@ -573,9 +573,10 @@ export function createIndicator(opts) {
         return Clutter && Clutter.EVENT_STOP != null ? Clutter.EVENT_STOP : true;
     }
 
-    function render(agents) {
+    function render(agents, scheduled) {
         try { deps.GLib.spawn_command_line_async('sh -c "echo render n=' + Object.keys(agents).length + ' >> /tmp/claude-flash.log"'); } catch (_) {}
         lastAgents = agents;
+        lastScheduled = scheduled || [];
 
         let ph     = host.panelHeight ? host.panelHeight() : 32;
         let groups = describeRender(agents, ph, cfg);
@@ -701,12 +702,69 @@ export function createIndicator(opts) {
             box.add_child(groupBox);
             transient.push(groupBox);
         }
+
+        // Render scheduled entries (upcoming / waiting to fire)
+        let schedList = scheduled || [];
+        if (schedList.length > 0) {
+            if (groups.length > 0) {
+                let sep = new St.Widget({
+                    style: "width: 1px; background-color: " + cfg.separatorColor + ";"
+                         + " height: " + ph + "px; margin: 0 2px;",
+                });
+                box.add_child(sep);
+                transient.push(sep);
+            }
+            for (let si = 0; si < schedList.length; si++) {
+                let s = schedList[si];
+                let proj = (s.project_path || s.name || "?").replace(/\/+$/, "").split("/").pop() || "?";
+                let schedBox = new St.BoxLayout({ vertical: true });
+
+                let lbl = new St.Label({
+                    style: "color: rgba(200,200,200,0.55);"
+                         + " font-size: " + cfg.labelFontSize + "px;"
+                         + " padding: 0 2px; text-align: center;"
+                         + " width: " + ph + "px;",
+                });
+                if (lbl.clutter_text && Pango && Pango.EllipsizeMode) {
+                    if (lbl.clutter_text.set_ellipsize)
+                        lbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.END);
+                    if (lbl.clutter_text.set_single_line_mode)
+                        lbl.clutter_text.set_single_line_mode(true);
+                }
+                if (lbl.set_text) lbl.set_text(proj);
+
+                let dot = new St.BoxLayout({ vertical: false });
+                dot.set_style("width: " + ph + "px; height: " + (ph - cfg.labelHeight) + "px; padding: 0;");
+
+                let ball = new St.Widget({
+                    style: "background-color: #444455;"
+                         + " width: " + (ph - 4) + "px;"
+                         + " height: " + (ph - cfg.labelHeight - 2) + "px;"
+                         + " border-radius: " + cfg.ballBorderRadius + "px;"
+                         + " margin: 1px auto;",
+                });
+                let clockLbl = new St.Label({
+                    style: "color: rgba(220,220,255,0.7);"
+                         + " font-size: " + Math.max(8, ph - cfg.labelHeight - 6) + "px;"
+                         + " margin: 0; padding: 0;",
+                });
+                if (clockLbl.set_text) clockLbl.set_text("⏰");
+
+                dot.add_child(ball);
+                dot.add_child(clockLbl);
+                schedBox.add_child(lbl);
+                schedBox.add_child(dot);
+
+                box.add_child(schedBox);
+                transient.push(schedBox);
+            }
+        }
     }
 
     function update() {
         let data = readJSONFile(deps, cfg.stateFile);
         if (!data) return;  // keep current display on read failure
-        render(data.agents || {});
+        render(data.agents || {}, data.scheduled || []);
     }
 
     // ---- timers / watchers ----
@@ -725,9 +783,11 @@ export function createIndicator(opts) {
         });
     });
 
+    let lastScheduled = [];
+
     function applyConfig(partial) {
         cfg = Object.assign({}, cfg, partial || {});
-        if (Object.keys(lastAgents).length > 0) render(lastAgents);
+        if (Object.keys(lastAgents).length > 0) render(lastAgents, lastScheduled);
     }
 
     function destroy() {
@@ -754,7 +814,7 @@ export function createIndicator(opts) {
         destroy:  destroy,
 
         // Test hooks — cheap & harmless to leave in production builds.
-        __test_setState:   function(data) { render((data && data.agents) || {}); },
+        __test_setState:   function(data) { render((data && data.agents) || {}, (data && data.scheduled) || []); },
         __test_render:     render,
         __test_getEntries: function() { return entries; },
         __test_getCfg:     function() { return cfg; },

@@ -5,9 +5,19 @@ import type { AgentsDict } from "./agents";
 export const STATE_FILE = "/tmp/claude-agents.json";
 export const BACKUP_FILE = STATE_FILE + ".bak";
 
+export interface ScheduledEntry {
+  id: number;
+  name: string;
+  project_path: string;
+  cron: string;
+  type: "interactive" | "headless";
+  enabled: boolean;
+}
+
 export interface StatePayload {
   agents: AgentsDict;
   reviews?: ReviewMeta[];
+  scheduled?: ScheduledEntry[];
   updated_at: number;
 }
 
@@ -19,11 +29,12 @@ export interface ReviewMeta {
 }
 
 /** Write state atomically: write to .tmp then rename */
-export function writeState(agents: AgentsDict, reviews: ReviewMeta[] = []): void {
+export function writeState(agents: AgentsDict, reviews: ReviewMeta[] = [], scheduled: ScheduledEntry[] = []): void {
   const tmp = STATE_FILE + ".tmp";
   const payload: StatePayload = {
     agents,
     reviews,
+    scheduled,
     updated_at: Date.now() / 1000,
   };
   fs.writeFileSync(tmp, JSON.stringify(payload));

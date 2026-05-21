@@ -1,10 +1,10 @@
 ---
 id: TASK-7
 title: SQLite DB + project root scanner
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-20 05:23'
-updated_date: '2026-05-20 05:50'
+updated_date: '2026-05-20 05:55'
 labels: []
 milestone: 'M3: Scheduling'
 dependencies:

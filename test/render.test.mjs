@@ -50,14 +50,45 @@ describe("describeRender: structure", () => {
         assert.equal(r.length, 2);
     });
 
-    test("group key is project_root when present", () => {
-        const r = describeRender({ "1": agent({ project_root: "/proj/foo", cwd: "/proj/foo/src" }) }, PH);
-        assert.equal(r[0].key, "/proj/foo");
+    test("group key is project_root + terminal_type when present", () => {
+        const r = describeRender({ "1": agent({ project_root: "/proj/foo", cwd: "/proj/foo/src", terminal_type: "idea" }) }, PH);
+        assert.equal(r[0].key, "/proj/foo|idea");
     });
 
     test("group key falls back to cwd when project_root missing", () => {
         const r = describeRender({ "1": agent({ project_root: undefined, cwd: "/proj/bar" }) }, PH);
-        assert.equal(r[0].key, "/proj/bar");
+        assert.equal(r[0].key, "/proj/bar|");
+    });
+
+    test("same project, same terminal_type → 1 group", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", project_root: "/proj/foo", terminal_type: "ghostty", started_at: 1 }),
+            "2": agent({ pid: "2", project_root: "/proj/foo", terminal_type: "ghostty", started_at: 2 }),
+        }, PH);
+        assert.equal(r.length, 1);
+        assert.equal(r[0].agents.length, 2);
+    });
+
+    test("same project, different terminal_type → 2 groups", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", project_root: "/proj/foo", terminal_type: "idea" }),
+            "2": agent({ pid: "2", project_root: "/proj/foo", terminal_type: "ghostty" }),
+        }, PH);
+        assert.equal(r.length, 2);
+    });
+
+    test("same project, idea vs ghostty → groups have correct labels", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", project_root: "/proj/foo", terminal_type: "idea",    tty: "/dev/pts/2" }),
+            "2": agent({ pid: "2", project_root: "/proj/foo", terminal_type: "ghostty", tty: "/dev/pts/5" }),
+        }, PH);
+        assert.equal(r.length, 2);
+        assert.ok(r.every(g => g.label === "foo"), "both groups should have label 'foo'");
+    });
+
+    test("group key encodes project_root and terminal_type", () => {
+        const r = describeRender({ "1": agent({ project_root: "/proj/foo", terminal_type: "idea" }) }, PH);
+        assert.equal(r[0].key, "/proj/foo|idea");
     });
 });
 

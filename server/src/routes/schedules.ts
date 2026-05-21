@@ -125,6 +125,7 @@ router.delete("/schedules/:id", (req: Request, res: Response) => {
   }
 
   scheduleRemove(id);
+  db.prepare("DELETE FROM runs WHERE schedule_id = ?").run(id);
   db.prepare("DELETE FROM schedules WHERE id = ?").run(id);
   res.status(204).send();
 });
