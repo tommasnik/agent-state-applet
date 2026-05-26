@@ -2,7 +2,7 @@ APPLET_UUID    := claude-agent-state@tommasnik
 APPLET_DEST    := $(HOME)/.local/share/cinnamon/applets/$(APPLET_UUID)
 GNOME_EXT_DEST := $(HOME)/.local/share/gnome-shell/extensions/$(APPLET_UUID)
 
-.PHONY: reload applet gnome server server-restart server-logs test test-server test-render test-ui \
+.PHONY: reload applet gnome server server-restart server-logs test test-server test-render test-ui test-click \
         install install-gnome install-cinnamon smoke logs-check check
 
 # Cinnamon dev reload
@@ -48,7 +48,7 @@ server-logs:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
-test: test-server test-render test-ui
+test: test-server test-render test-ui test-click
 
 test-server:
 	cd server && npm test
@@ -58,6 +58,9 @@ test-render:
 
 test-ui:
 	node --test test/ui.test.mjs
+
+test-click:
+	node --test test/click.test.mjs
 
 # ---------------------------------------------------------------------------
 # Smoke / log checks — quick agent-runnable sanity checks against a live env.

@@ -241,6 +241,51 @@ describe("describeRender: group labels", () => {
 });
 
 // ---------------------------------------------------------------------------
+// describeRender — label disambiguation
+// ---------------------------------------------------------------------------
+
+describe("describeRender: label disambiguation", () => {
+    test("2 groups same basename → labels include parent dir", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", project_root: "/side-project/bot-platform", tty: "/dev/pts/1" }),
+            "2": agent({ pid: "2", project_root: "/work/bot-platform", tty: "/dev/pts/2" }),
+        }, PH);
+        assert.equal(r.length, 2);
+        const labels = r.map(g => g.label);
+        assert.ok(labels.includes("side-project/bot-platform"), `expected side-project/bot-platform, got ${labels}`);
+        assert.ok(labels.includes("work/bot-platform"), `expected work/bot-platform, got ${labels}`);
+    });
+
+    test("unique basenames → labels are just basenames (no disambiguation needed)", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", project_root: "/code/alpha", tty: "/dev/pts/1" }),
+            "2": agent({ pid: "2", project_root: "/code/beta", tty: "/dev/pts/2" }),
+        }, PH);
+        const labels = r.map(g => g.label);
+        assert.ok(labels.includes("alpha"), `expected alpha in ${labels}`);
+        assert.ok(labels.includes("beta"), `expected beta in ${labels}`);
+    });
+
+    test("3 groups: 2 same basename + 1 unique → only duplicates get parent prefix", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", project_root: "/side/bot-platform", tty: "/dev/pts/1" }),
+            "2": agent({ pid: "2", project_root: "/work/bot-platform", tty: "/dev/pts/2" }),
+            "3": agent({ pid: "3", project_root: "/code/alpha", tty: "/dev/pts/3" }),
+        }, PH);
+        assert.equal(r.length, 3);
+        const labels = r.map(g => g.label);
+        assert.ok(labels.includes("alpha"), `unique group should keep short label, got ${labels}`);
+        assert.ok(labels.includes("side/bot-platform"), `expected side/bot-platform in ${labels}`);
+        assert.ok(labels.includes("work/bot-platform"), `expected work/bot-platform in ${labels}`);
+    });
+
+    test("single group → label unchanged even if path has multiple components", () => {
+        const r = describeRender({ "1": agent({ project_root: "/work/my-project" }) }, PH);
+        assert.equal(r[0].label, "my-project");
+    });
+});
+
+// ---------------------------------------------------------------------------
 // formatDuration
 // ---------------------------------------------------------------------------
 
@@ -362,5 +407,55 @@ describe("tooltipText", () => {
     test("shows - for running when started_at missing", () => {
         const t = tooltipText({ ...base, started_at: undefined }, NOW);
         assert.ok(t.includes(">-<"));
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Scenario tests — fixture-driven
+// ---------------------------------------------------------------------------
+
+import { readFileSync } from "node:fs";
+import { URL } from "node:url";
+
+const sc1Fixture = JSON.parse(
+    readFileSync(new URL("../test-fixtures/scenarios/sc1-idea-same-name/server-state/after-both-registered.json", import.meta.url))
+);
+const sc2Fixture = JSON.parse(
+    readFileSync(new URL("../test-fixtures/scenarios/sc2-idea-and-ghostty/server-state/after-both-registered.json", import.meta.url))
+);
+
+describe("SC1 render: 2x IDEA stejné jméno projektu", () => {
+    test("2 skupiny s disambiguovanými labely (work/proj1 a subfolder/proj1)", () => {
+        const r = describeRender(sc1Fixture, PH);
+        assert.equal(r.length, 2);
+        const labels = new Set(r.map(g => g.label));
+        assert.ok(labels.has("work/proj1"), `Očekáváno work/proj1, dostáno: ${[...labels]}`);
+        assert.ok(labels.has("subfolder/proj1"), `Očekáváno subfolder/proj1, dostáno: ${[...labels]}`);
+    });
+
+    test("každá skupina má 1 agenta", () => {
+        const r = describeRender(sc1Fixture, PH);
+        for (const g of r) {
+            assert.equal(g.agents.length, 1, `Skupina ${g.label} má ${g.agents.length} agentů`);
+        }
+    });
+});
+
+describe("SC2 render: IDEA + Ghostty", () => {
+    test("2 skupiny (myapp a backend)", () => {
+        const r = describeRender(sc2Fixture, PH);
+        assert.equal(r.length, 2);
+    });
+
+    test("skupiny mají labely myapp a backend", () => {
+        const r = describeRender(sc2Fixture, PH);
+        const labels = new Set(r.map(g => g.label));
+        assert.ok(labels.has("myapp"), `Očekáváno myapp, dostáno: ${[...labels]}`);
+        assert.ok(labels.has("backend"), `Očekáváno backend, dostáno: ${[...labels]}`);
+    });
+
+    test("každá skupina má jiný terminal_type ve vstupních datech", () => {
+        const types = Object.values(sc2Fixture).map(a => a.terminal_type).sort();
+        assert.deepEqual(types, ["ghostty", "idea"]);
     });
 });

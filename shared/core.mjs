@@ -158,9 +158,11 @@ export function describeRender(agents, panelHeight, cfg) {
         let n     = group.length;
         let ballW = Math.max(panelHeight, Math.floor(panelHeight * 2 / n));
         let ballH = panelHeight - c.labelHeight;
+        let path  = group[0].project_root || group[0].cwd || "";
         groups.push({
             key:    gkey,
             label:  projectName(group[0]),
+            _path:  path,
             ballW:  ballW,
             ballH:  ballH,
             agents: group.map(function(agent) {
@@ -172,6 +174,26 @@ export function describeRender(agents, panelHeight, cfg) {
             }),
         });
     }
+
+    // Disambiguate groups that share the same label but have DIFFERENT project_roots.
+    // Same project open in two terminal types (idea + ghostty) keeps the short label.
+    let labelPaths = {};
+    for (let gi = 0; gi < groups.length; gi++) {
+        let lbl = groups[gi].label;
+        let path = groups[gi]._path || "";
+        if (!labelPaths[lbl]) labelPaths[lbl] = new Set();
+        labelPaths[lbl].add(path);
+    }
+    for (let gi = 0; gi < groups.length; gi++) {
+        if (labelPaths[groups[gi].label].size > 1) {
+            let parts = (groups[gi]._path || "").split("/").filter(Boolean);
+            if (parts.length >= 2) {
+                groups[gi].label = parts[parts.length - 2] + "/" + parts[parts.length - 1];
+            }
+        }
+        delete groups[gi]._path;
+    }
+
     return groups;
 }
 
@@ -818,5 +840,6 @@ export function createIndicator(opts) {
         __test_render:     render,
         __test_getEntries: function() { return entries; },
         __test_getCfg:     function() { return cfg; },
+        __test_clickPid:   function(pid) { dispatchClick(pid); },
     };
 }
