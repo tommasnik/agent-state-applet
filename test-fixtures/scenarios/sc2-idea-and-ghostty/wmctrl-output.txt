@@ -1,0 +1,2 @@
+0x02e00051  0 tom-pc myapp — IntelliJ IDEA
+0x02e00052  0 tom-pc Ghostty

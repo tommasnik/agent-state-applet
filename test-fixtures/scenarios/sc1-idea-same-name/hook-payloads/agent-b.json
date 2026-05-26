@@ -1,0 +1,13 @@
+{
+  "pid": 10002,
+  "session_id": "bbbb2222bbbb2222bbbb2222bbbb2222",
+  "state": "initialized",
+  "hook_event": "SessionStart",
+  "tool_name": "",
+  "cwd": "/home/tom/work/subfolder/proj1",
+  "project_root": "/home/tom/work/subfolder/proj1",
+  "tty": "/dev/pts/4",
+  "window_id": "0x01e00042",
+  "tab_name": "cc-bbbb2222",
+  "terminal_type": "idea"
+}

@@ -1,0 +1,13 @@
+{
+  "pid": 20002,
+  "session_id": "dddd4444dddd4444dddd4444dddd4444",
+  "state": "initialized",
+  "hook_event": "SessionStart",
+  "tool_name": "",
+  "cwd": "/home/tom/work/backend",
+  "project_root": "/home/tom/work/backend",
+  "tty": "/dev/pts/6",
+  "window_id": "0x02e00052",
+  "tab_name": "cc-dddd4444",
+  "terminal_type": "ghostty"
+}

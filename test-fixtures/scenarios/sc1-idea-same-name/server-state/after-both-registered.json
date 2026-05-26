@@ -1,0 +1,38 @@
+{
+  "10001": {
+    "pid": 10001,
+    "cwd": "/home/tom/work/proj1",
+    "state": "initialized",
+    "timestamp": 1748249600.0,
+    "hook_event": "SessionStart",
+    "tool_name": "",
+    "session_id": "aaaa1111aaaa1111aaaa1111aaaa1111",
+    "subagent_count": 0,
+    "started_at": 1748249600.0,
+    "window_id": "0x01e00041",
+    "tab_name": "cc-aaaa1111",
+    "terminal_type": "idea",
+    "tty": "/dev/pts/3",
+    "project_root": "/home/tom/work/proj1",
+    "ai_title": "",
+    "ghostty_tab_index": null
+  },
+  "10002": {
+    "pid": 10002,
+    "cwd": "/home/tom/work/subfolder/proj1",
+    "state": "initialized",
+    "timestamp": 1748249600.0,
+    "hook_event": "SessionStart",
+    "tool_name": "",
+    "session_id": "bbbb2222bbbb2222bbbb2222bbbb2222",
+    "subagent_count": 0,
+    "started_at": 1748249600.0,
+    "window_id": "0x01e00042",
+    "tab_name": "cc-bbbb2222",
+    "terminal_type": "idea",
+    "tty": "/dev/pts/4",
+    "project_root": "/home/tom/work/subfolder/proj1",
+    "ai_title": "",
+    "ghostty_tab_index": null
+  }
+}
