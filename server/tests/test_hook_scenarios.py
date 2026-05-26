@@ -87,7 +87,7 @@ def invoke_hook(monkeypatch, fixture: dict, tmp_path: Path):
     # Isolace od systémových závislostí
     monkeypatch.setattr(state_report, "find_claude_pid", lambda: 99999)
     monkeypatch.setattr(state_report, "get_tty", lambda pid: fixture["tty"])
-    monkeypatch.setattr(state_report, "get_window_id_for_pid", lambda pid: fixture["window_id"])
+    monkeypatch.setattr(state_report, "get_window_id_for_pid", lambda pid, **kw: fixture["window_id"])
     monkeypatch.setattr(state_report, "get_terminal_type", lambda pid: fixture["terminal_type"])
     monkeypatch.setattr(state_report, "set_terminal_title", lambda pid, title: None)
 

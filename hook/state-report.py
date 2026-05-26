@@ -20,6 +20,22 @@ HOOK_STATE = {
 
 ASK_USER_TOOLS = {"AskUserQuestion", "AskUserQuestions"}
 
+def _idea_project_name(project_root):
+    """Return the IDEA project name for project_root.
+
+    IDEA writes the custom name to .idea/.name when it differs from the directory
+    name.  Falls back to the directory basename when the file is absent.
+    """
+    try:
+        name_file = os.path.join(project_root, ".idea", ".name")
+        name = open(name_file).read().strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    return os.path.basename(project_root.rstrip("/"))
+
+
 _IDEA_MARKERS = (
     "intellij", "idea64", "idea.sh", "-didea", "jetbrains",
     "pycharm", "webstorm", "goland", "clion", "rider",
@@ -40,17 +56,24 @@ def _is_idea_pid(pid):
         return False
 
 
-def get_window_id_for_pid(target_pid):
+def get_window_id_for_pid(target_pid, project_root=None):
     """Find the X11 window that owns the terminal containing target_pid.
 
     Walks the process tree upward from target_pid and checks each ancestor
     against the PID reported by wmctrl for each window.  Prefers windows
     belonging to IntelliJ/JetBrains processes over other ancestors.
+
+    JetBrains IDEs run all project windows inside a single JVM process, so
+    multiple windows share the same PID in wmctrl output.  When that happens
+    and project_root is provided, the window whose title starts with the
+    project name (basename of project_root) is preferred.
+
     Falls back to _NET_ACTIVE_WINDOW if wmctrl is unavailable or finds nothing.
     """
     display = os.environ.get("DISPLAY", ":0")
     env = {**os.environ, "DISPLAY": display}
 
+    # pid -> list of (win_id, title)  — list because IDEA shares one PID across windows
     windows_by_pid = {}
     try:
         r = subprocess.run(
@@ -60,7 +83,10 @@ def get_window_id_for_pid(target_pid):
             parts = line.split(None, 4)
             if len(parts) >= 3:
                 try:
-                    windows_by_pid[int(parts[2])] = parts[0]
+                    pid = int(parts[2])
+                    win_id = parts[0]
+                    title = parts[4] if len(parts) >= 5 else ""
+                    windows_by_pid.setdefault(pid, []).append((win_id, title))
                 except ValueError:
                     pass
     except Exception:
@@ -73,11 +99,16 @@ def get_window_id_for_pid(target_pid):
         while pid > 1 and pid not in visited:
             visited.add(pid)
             if pid in windows_by_pid:
-                win_id = windows_by_pid[pid]
+                wins = windows_by_pid[pid]
                 if _is_idea_pid(pid):
-                    return win_id  # found the IDE window — stop here
+                    if project_root and len(wins) > 1:
+                        proj_name = _idea_project_name(project_root)
+                        for win_id, title in wins:
+                            if title.startswith(proj_name + " ") or title == proj_name:
+                                return win_id
+                    return wins[0][0]
                 if first_win is None:
-                    first_win = win_id
+                    first_win = wins[0][0]
             try:
                 with open(f"/proc/{pid}/status") as f:
                     for line in f:
@@ -227,7 +258,7 @@ def main():
     }
 
     if event in ("SessionStart", "UserPromptSubmit"):
-        wid = get_window_id_for_pid(claude_pid)
+        wid = get_window_id_for_pid(claude_pid, project_root=payload["project_root"])
         tab = f"cc-{session_id[:8]}" if session_id else ""
         payload["window_id"]     = wid
         payload["tab_name"]      = tab
