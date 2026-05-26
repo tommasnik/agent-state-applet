@@ -62,13 +62,23 @@ ClaudeAgentStateApplet.prototype = {
                     return null;
                 },
                 getWindowActors: function() { return global.get_window_actors(); },
-                getAppIcon: function(windowIdHex, pid, size) {
-                    // Returns a Clutter actor (icon texture) or null.
+                // resolveAppIcon(window_id, pid, size) → Clutter actor (icon texture) or null.
+                //
+                // Looks up the application owning the given window (by X11 window ID hex string)
+                // via Cinnamon.WindowTracker. Falls back to PID-based lookup when window_id is
+                // unavailable. Returns null when the app cannot be resolved or icon creation fails,
+                // so callers must always handle null gracefully.
+                //
+                // @param {string|null} windowIdHex  — X11 window ID as hex string (e.g. "0x3a00005") or null
+                // @param {string}      pid           — agent PID (string)
+                // @param {number}      size          — icon size in pixels
+                // @returns {Clutter.Actor|null}
+                resolveAppIcon: function(windowIdHex, pid, size) {
                     try {
                         const tracker = Cinnamon.WindowTracker.get_default();
                         let app = null;
 
-                        // Try window_id first
+                        // Try window_id first — most precise, avoids PID reuse races.
                         if (windowIdHex) {
                             let targetXid = parseInt(windowIdHex, 16);
                             let actors = global.get_window_actors();
@@ -83,14 +93,14 @@ ClaudeAgentStateApplet.prototype = {
                             }
                         }
 
-                        // Fallback to PID
+                        // Fallback to PID when window_id is absent or lookup failed.
                         if (!app && pid) {
                             app = tracker.get_app_from_pid(parseInt(pid, 10));
                         }
 
                         if (!app) return null;
                         return app.create_icon_texture(size || 20);
-                    } catch (e) {
+                    } catch (_) {
                         return null;
                     }
                 },

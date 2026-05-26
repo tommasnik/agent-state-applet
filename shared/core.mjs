@@ -562,6 +562,9 @@ function readJSONFile(deps, path) {
 //              screenSize()   -> [w, h],
 //              getFocusedXid() -> int|null,       // X11 id of focused window
 //              getWindowActors() -> actors[],     // for flash
+//              resolveAppIcon(window_id, pid, size) -> Clutter.Actor|null,
+//                // optional: returns icon texture actor for the given agent, or null.
+//                // Called once per agent per cache TTL (1 h). Must never throw.
 //            }
 //   config = partial overrides on DEFAULT_CONFIG
 //   onClick(pid, agent, action)                   // action: "focus" | "reset"
@@ -735,8 +738,11 @@ export function createIndicator(opts) {
                     entry.iconActor = null;
                 }
 
-                // Add app icon as overlay inside ball widget
-                if (host.getAppIcon) {
+                // Add app icon as overlay inside ball widget.
+                // host.resolveAppIcon is optional — skipped when the adapter doesn't
+                // provide it (e.g. test env without GJS). Icons are cached for
+                // ICON_TTL_MS (1 h) keyed by window_id (or "pid:<pid>" as fallback).
+                if (host.resolveAppIcon) {
                     let agentData = agents[agentDesc.pid];
                     let winId = agentData && agentData.window_id;
                     let cacheKey = winId || ("pid:" + agentDesc.pid);
@@ -760,7 +766,7 @@ export function createIndicator(opts) {
                             entry.iconActor = cached.actor;
                         } catch (_) {}
                     } else {
-                        let iconActor = host.getAppIcon(winId, agentDesc.pid, g.ballH - 4);
+                        let iconActor = host.resolveAppIcon(winId, agentDesc.pid, g.ballH - 4);
                         if (iconActor) {
                             iconCache[cacheKey] = { actor: iconActor, ts: nowMs };
                             try {

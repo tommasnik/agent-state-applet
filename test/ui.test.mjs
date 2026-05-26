@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { createIndicator, STATE_COLOR, DEFAULT_CONFIG, TERMINAL_ICON } from "../shared/core.mjs";
-import { makeFakeEnv } from "./fakes/gjs-fakes.mjs";
+import { makeFakeEnv, FakeActor } from "./fakes/gjs-fakes.mjs";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -329,6 +329,164 @@ describe("createIndicator: tooltip placement", () => {
         entry.ball.emit("enter-event");
         const ty = entry.tooltip._actor.y;
         assert.ok(ty < 200, `forced 'above' should still place tooltip above cursor; got y=${ty}`);
+        ind.destroy();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// App icons (host.resolveAppIcon)
+// ---------------------------------------------------------------------------
+
+// Helper: build a setup where host.resolveAppIcon returns a fake icon actor.
+function setupWithIcon(initialState, resolveAppIconFn) {
+    const env = makeFakeEnv();
+    const STATE_FILE = "/tmp/claude-agents-icon-test.json";
+    env.setFile(STATE_FILE, initialState || { agents: {} });
+    const host = makeHost();
+    host.resolveAppIcon = resolveAppIconFn || (() => new FakeActor());
+    const ind = createIndicator({
+        deps:   env.deps,
+        host,
+        config: { stateFile: STATE_FILE },
+        onClick: () => {},
+    });
+    return { env, host, ind, STATE_FILE };
+}
+
+describe("createIndicator: app icons", () => {
+    test("host.resolveAppIcon present → icon actor added as child of ball", () => {
+        const iconActor = new FakeActor();
+        const { ind } = setupWithIcon(
+            { agents: { "1": agent({ window_id: "0x100001" }) } },
+            () => iconActor
+        );
+        const entry = ind.__test_getEntries()["1"];
+        assert.ok(entry.ball.children.includes(iconActor),
+            "icon actor should be a child of the ball widget");
+        ind.destroy();
+    });
+
+    test("host.resolveAppIcon returns null → no icon child, no error", () => {
+        const { ind } = setupWithIcon(
+            { agents: { "1": agent() } },
+            () => null
+        );
+        const entry = ind.__test_getEntries()["1"];
+        assert.equal(entry.iconActor, null,
+            "iconActor should be null when resolveAppIcon returns null");
+        // Ball should have no children (no icon was added).
+        assert.equal(entry.ball.children.length, 0,
+            "ball should have no children when icon is null");
+        ind.destroy();
+    });
+
+    test("host.resolveAppIcon absent → no icon, no error", () => {
+        // Standard setup without resolveAppIcon on host.
+        const { ind } = setup({ agents: { "1": agent() } });
+        const entry = ind.__test_getEntries()["1"];
+        assert.equal(entry.iconActor, null,
+            "iconActor should be null when host has no resolveAppIcon");
+        ind.destroy();
+    });
+
+    test("host.resolveAppIcon called with correct window_id, pid, size", () => {
+        const calls = [];
+        // The dict key must match pid so tooltipText can look up the agent.
+        const { ind } = setupWithIcon(
+            { agents: { "99": agent({ pid: "99", window_id: "0xABCD" }) } },
+            (winId, pid, size) => {
+                calls.push({ winId, pid, size });
+                return null;
+            }
+        );
+        assert.equal(calls.length, 1, "resolveAppIcon should be called once");
+        assert.equal(calls[0].winId, "0xABCD", "window_id passed correctly");
+        assert.equal(calls[0].pid,   "99",     "pid passed correctly");
+        assert.ok(calls[0].size > 0,            "size should be positive");
+        ind.destroy();
+    });
+
+    test("icon cached: resolveAppIcon not called again within TTL (1 h)", () => {
+        const calls = [];
+        const { ind } = setupWithIcon(
+            { agents: { "1": agent({ window_id: "0x200001" }) } },
+            (winId, pid, size) => {
+                calls.push({ winId, pid, size });
+                return new FakeActor();
+            }
+        );
+        assert.equal(calls.length, 1, "first render calls resolveAppIcon once");
+
+        // Re-render without advancing time — icon should come from cache.
+        ind.__test_setState({ agents: { "1": agent({ window_id: "0x200001" }) } });
+        assert.equal(calls.length, 1,
+            "second render within TTL must NOT call resolveAppIcon again (cache hit)");
+        ind.destroy();
+    });
+
+    test("icon cache TTL 1 h: resolveAppIcon called again after TTL expires", () => {
+        const calls = [];
+        // Patch Date.now to control time.
+        const origDateNow = Date.now;
+        let fakeNow = 1_000_000;
+        Date.now = () => fakeNow;
+
+        try {
+            const { ind } = setupWithIcon(
+                { agents: { "1": agent({ window_id: "0x300001" }) } },
+                (winId, pid, size) => {
+                    calls.push({ winId, pid, size });
+                    return new FakeActor();
+                }
+            );
+            assert.equal(calls.length, 1, "initial render calls resolveAppIcon");
+
+            // Advance time by 1 ms less than TTL — still within cache window.
+            fakeNow += 3600 * 1000 - 1;
+            ind.__test_setState({ agents: { "1": agent({ window_id: "0x300001" }) } });
+            assert.equal(calls.length, 1, "1 ms before TTL icon still served from cache");
+
+            // Advance to exactly at TTL — cache condition is strict < so this is a miss.
+            fakeNow += 1;
+            ind.__test_setState({ agents: { "1": agent({ window_id: "0x300001" }) } });
+            assert.equal(calls.length, 2,
+                "at TTL (not strictly less-than) resolveAppIcon must be called again (cache miss)");
+            ind.destroy();
+        } finally {
+            Date.now = origDateNow;
+        }
+    });
+
+    test("fallback to pid-based cache key when window_id absent", () => {
+        const calls = [];
+        // Dict key must match pid field.
+        const { ind } = setupWithIcon(
+            { agents: { "77": agent({ pid: "77", window_id: undefined }) } },
+            (winId, pid, size) => {
+                calls.push({ winId, pid });
+                return new FakeActor();
+            }
+        );
+        assert.equal(calls.length, 1);
+        // window_id is undefined/null (absent from agent data)
+        assert.ok(calls[0].winId == null, "window_id should be null/undefined when absent");
+        assert.equal(calls[0].pid, "77", "pid passed as fallback cache key");
+
+        // Re-render — should still be cached by "pid:77".
+        ind.__test_setState({ agents: { "77": agent({ pid: "77", window_id: undefined }) } });
+        assert.equal(calls.length, 1, "pid-keyed cache hit on re-render");
+        ind.destroy();
+    });
+
+    test("unknown terminal type → icon resolved and displayed without error", () => {
+        const iconActor = new FakeActor();
+        const { ind } = setupWithIcon(
+            { agents: { "1": agent({ terminal_type: "unknown-term" }) } },
+            () => iconActor
+        );
+        const entry = ind.__test_getEntries()["1"];
+        assert.ok(entry.ball.children.includes(iconActor),
+            "icon should appear regardless of terminal_type");
         ind.destroy();
     });
 });
