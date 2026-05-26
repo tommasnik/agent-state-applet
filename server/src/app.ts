@@ -13,11 +13,13 @@ import schedulesRouter from "./routes/schedules";
 import promptsRouter from "./routes/prompts";
 import type { ReviewMeta } from "./stateFile";
 import type { WriteStateFn } from "./index";
+import { type SystemCalls, defaultSystemCalls } from "./system-calls";
 
 export function buildApp(
   store: AgentStore,
   writeState: WriteStateFn,
-  pendingReviews: Map<string, ReviewMeta>
+  pendingReviews: Map<string, ReviewMeta>,
+  sys: SystemCalls = defaultSystemCalls
 ): express.Application {
   const app = express();
   app.use(express.json());
@@ -33,8 +35,8 @@ export function buildApp(
   }
 
   app.use("/agent", createAgentRouter(store, writeState));
-  app.use("/focus", createFocusRouter(store, writeState));
-  app.use("/api/focus", createFocusRouter(store, writeState));
+  app.use("/focus", createFocusRouter(store, writeState, sys));
+  app.use("/api/focus", createFocusRouter(store, writeState, sys));
   app.use("/status", createStatusRouter(store));
   app.use("/reviews", createReviewsRouter(pendingReviews, writeState));
   app.use("/api", configRouter);
