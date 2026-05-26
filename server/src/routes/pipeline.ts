@@ -44,7 +44,7 @@ interface PipelineJob {
 }
 
 interface PipelineData {
-  provider: "gitlab";
+  provider: "gitlab" | "github";
   status: string;
   ref: string;
   web_url: string;
@@ -114,9 +114,133 @@ function extractGitLabProjectId(remoteUrl: string): string | null {
   return null;
 }
 
-function detectProvider(remoteUrl: string): "gitlab" | null {
+export function detectProvider(remoteUrl: string): "gitlab" | "github" | null {
   if (remoteUrl.includes("gitlab")) return "gitlab";
+  if (remoteUrl.includes("github.com")) return "github";
   return null;
+}
+
+/**
+ * Extract "owner/repo" from a GitHub remote URL.
+ * Handles both SSH (git@github.com:owner/repo.git) and HTTPS forms.
+ */
+export function extractGitHubRepoId(remoteUrl: string): string | null {
+  // SSH: git@github.com:owner/repo.git
+  const sshMatch = remoteUrl.match(/git@github\.com:(.+?)(?:\.git)?$/);
+  if (sshMatch) return sshMatch[1];
+  // HTTPS: https://github.com/owner/repo.git
+  const httpsMatch = remoteUrl.match(/https?:\/\/(?:[^@]+@)?github\.com\/(.+?)(?:\.git)?$/);
+  if (httpsMatch) return httpsMatch[1];
+  return null;
+}
+
+export function mapGitHubRunStatus(status: string, conclusion: string | null): string {
+  if (status === "completed") {
+    if (conclusion === "success") return "success";
+    if (conclusion === "failure") return "failed";
+    if (conclusion === "cancelled") return "canceled";
+    return conclusion ?? status;
+  }
+  if (status === "in_progress") return "running";
+  if (status === "queued" || status === "waiting") return "pending";
+  return status;
+}
+
+export function mapGitHubJobStatus(status: string, conclusion: string | null): string {
+  if (conclusion === "success") return "success";
+  if (conclusion === "failure") return "failed";
+  if (status === "in_progress") return "running";
+  if (status === "queued" || status === "waiting") return "pending";
+  return "skipped";
+}
+
+async function fetchGitHubPipeline(projectPath: string, branch: string, repoId: string): Promise<PipelineData | null> {
+  // 1. Get latest run for the branch
+  let runsRaw: string;
+  try {
+    runsRaw = await exec(
+      "gh",
+      ["run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId,status,conclusion,htmlUrl,headBranch,createdAt,updatedAt", "--repo", repoId],
+      projectPath,
+      10000
+    );
+  } catch (err) {
+    process.stderr.write(`[pipeline] gh run list failed for ${projectPath}: ${err}\n`);
+    return null;
+  }
+
+  let runs: Array<{
+    databaseId: number;
+    status: string;
+    conclusion: string | null;
+    htmlUrl: string;
+    headBranch: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  try {
+    runs = JSON.parse(runsRaw);
+  } catch {
+    process.stderr.write(`[pipeline] gh run list returned invalid JSON for ${projectPath}\n`);
+    return null;
+  }
+
+  if (!Array.isArray(runs) || runs.length === 0) return null;
+
+  const run = runs[0];
+  const unifiedStatus = mapGitHubRunStatus(run.status, run.conclusion ?? null);
+
+  // 2. Get jobs for the run
+  let jobs: PipelineJob[] = [];
+  try {
+    const jobsRaw = await exec(
+      "gh",
+      ["run", "view", String(run.databaseId), "--json", "jobs", "--repo", repoId],
+      projectPath,
+      10000
+    );
+    const parsed = JSON.parse(jobsRaw) as {
+      jobs: Array<{
+        databaseId: number;
+        name: string;
+        status: string;
+        conclusion: string | null;
+        startedAt: string | null;
+        completedAt: string | null;
+        url: string;
+      }>;
+    };
+    if (Array.isArray(parsed.jobs)) {
+      jobs = parsed.jobs.map((j) => {
+        let duration: number | null = null;
+        if (j.startedAt && j.completedAt) {
+          const diff = (new Date(j.completedAt).getTime() - new Date(j.startedAt).getTime()) / 1000;
+          duration = Math.round(diff);
+        }
+        return {
+          id: j.databaseId,
+          name: j.name,
+          status: mapGitHubJobStatus(j.status, j.conclusion ?? null),
+          web_url: j.url,
+          duration,
+          started_at: j.startedAt ?? null,
+        };
+      });
+    }
+  } catch (err) {
+    process.stderr.write(`[pipeline] gh run view jobs failed for ${projectPath}: ${err}\n`);
+    // Return pipeline without jobs rather than null
+  }
+
+  return {
+    provider: "github",
+    status: unifiedStatus,
+    ref: run.headBranch,
+    web_url: run.htmlUrl,
+    started_at: run.createdAt ?? null,
+    duration: null,
+    jobs,
+  };
 }
 
 async function glabApi(endpoint: string, cwd: string): Promise<unknown> {
@@ -148,6 +272,14 @@ async function fetchPipeline(projectPath: string): Promise<PipelineData | null> 
   // 3. Detect provider
   const provider = detectProvider(remoteUrl);
   process.stderr.write(`[pipeline] ${projectPath}: branch=${branch} remote=${remoteUrl} provider=${provider}\n`);
+
+  if (provider === "github") {
+    const repoId = extractGitHubRepoId(remoteUrl);
+    process.stderr.write(`[pipeline] ${projectPath}: github repoId=${repoId}\n`);
+    if (!repoId) return null;
+    return fetchGitHubPipeline(projectPath, branch, repoId);
+  }
+
   if (provider !== "gitlab") return null;
 
   const projectId = extractGitLabProjectId(remoteUrl);
