@@ -18,7 +18,11 @@ dependencies {
         // Set IDEA_PATH env var or replace this with your local IntelliJ installation path.
         // Example (Toolbox): ~/.local/share/JetBrains/Toolbox/apps/intellij-idea-ultimate
         // Example (snap):    /snap/intellij-idea-ultimate/current
-        local(System.getenv("IDEA_PATH") ?: error("Set IDEA_PATH to your IntelliJ installation directory"))
+        local("/home/tom/.local/share/JetBrains/Toolbox/apps/intellij-idea-ultimate")
         bundledPlugin("org.jetbrains.plugins.terminal")
     }
+    implementation(kotlin("stdlib-jdk8"))
+}
+kotlin {
+    jvmToolchain(8)
 }
