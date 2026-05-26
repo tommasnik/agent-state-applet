@@ -24,6 +24,12 @@ export const FALLBACK_MS = 3000;
 export const BALL_MARGIN = 1;
 export const LABEL_H     = 14;
 
+export const TERMINAL_ICON = {
+    idea:    "◆",
+    ghostty: "▸",
+    generic: "",
+};
+
 export const STATE_COLOR = {
     initialized:          "#888888",
     working:              "#e8c000",
@@ -143,7 +149,7 @@ export function describeRender(agents, panelHeight, cfg) {
     let groupMap   = {};
     for (let i = 0; i < sorted.length; i++) {
         let agent = sorted[i];
-        let gkey  = (agent.project_root || agent.cwd || "") + "|" + (agent.terminal_type || "");
+        let gkey  = (agent.project_root || agent.cwd || "");
         if (!groupMap[gkey]) {
             groupMap[gkey] = [];
             groupOrder.push(gkey);
@@ -160,12 +166,13 @@ export function describeRender(agents, panelHeight, cfg) {
         let ballH = panelHeight - c.labelHeight;
         let path  = group[0].project_root || group[0].cwd || "";
         groups.push({
-            key:    gkey,
-            label:  projectName(group[0]),
-            _path:  path,
-            ballW:  ballW,
-            ballH:  ballH,
-            agents: group.map(function(agent) {
+            key:           gkey,
+            label:         projectName(group[0]),
+            _path:         path,
+            terminal_type: group[0].terminal_type || "generic",
+            ballW:         ballW,
+            ballH:         ballH,
+            agents:        group.map(function(agent) {
                 return {
                     pid:   String(agent.pid),
                     state: agent.state,
@@ -697,7 +704,8 @@ export function createIndicator(opts) {
                 if (groupLbl.clutter_text.set_single_line_mode)
                     groupLbl.clutter_text.set_single_line_mode(true);
             }
-            if (groupLbl.set_text) groupLbl.set_text(g.label);
+            let termIcon = TERMINAL_ICON[g.terminal_type] || "";
+            if (groupLbl.set_text) groupLbl.set_text(termIcon ? termIcon + " " + g.label : g.label);
             let labelClickPid = focusPid;
             groupLbl.connect("button-press-event", function(_actor, event) {
                 let btn = event && event.get_button ? event.get_button() : 1;

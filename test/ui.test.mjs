@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { createIndicator, STATE_COLOR, DEFAULT_CONFIG } from "../shared/core.mjs";
+import { createIndicator, STATE_COLOR, DEFAULT_CONFIG, TERMINAL_ICON } from "../shared/core.mjs";
 import { makeFakeEnv } from "./fakes/gjs-fakes.mjs";
 
 // ---------------------------------------------------------------------------
@@ -127,11 +127,31 @@ describe("createIndicator: rendering", () => {
         ind.destroy();
     });
 
-    test("group label shows project name", () => {
+    test("group label shows project name (no terminal_type → no icon prefix)", () => {
         const { ind } = setup({ agents: { "1": agent({ project_root: "/x/myproject" }) } });
         const labels = findLabels(ind.box);
         const hasName = labels.some(l => l._text === "myproject");
         assert.ok(hasName, "project name appears as a label");
+        ind.destroy();
+    });
+
+    test("group label includes terminal icon for idea", () => {
+        const { ind } = setup({ agents: { "1": agent({ project_root: "/x/myproject", terminal_type: "idea" }) } });
+        const labels = findLabels(ind.box);
+        const found = labels.find(l => l._text && l._text.includes("myproject"));
+        assert.ok(found, "label with project name not found");
+        assert.ok(found._text.includes(TERMINAL_ICON.idea),
+            `Label '${found._text}' neobsahuje IDEA ikonu '${TERMINAL_ICON.idea}'`);
+        ind.destroy();
+    });
+
+    test("group label includes terminal icon for ghostty", () => {
+        const { ind } = setup({ agents: { "1": agent({ project_root: "/x/myproject", terminal_type: "ghostty" }) } });
+        const labels = findLabels(ind.box);
+        const found = labels.find(l => l._text && l._text.includes("myproject"));
+        assert.ok(found, "label with project name not found");
+        assert.ok(found._text.includes(TERMINAL_ICON.ghostty),
+            `Label '${found._text}' neobsahuje Ghostty ikonu '${TERMINAL_ICON.ghostty}'`);
         ind.destroy();
     });
 });

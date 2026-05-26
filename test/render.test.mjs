@@ -9,6 +9,7 @@ import {
     STATE_COLOR,
     LABEL_H,
     BALL_MARGIN,
+    TERMINAL_ICON,
 } from "../shared/core.mjs";
 
 const PH = 40; // panel height used across tests
@@ -50,14 +51,14 @@ describe("describeRender: structure", () => {
         assert.equal(r.length, 2);
     });
 
-    test("group key is project_root + terminal_type when present", () => {
+    test("group key is project_root (terminal_type not included)", () => {
         const r = describeRender({ "1": agent({ project_root: "/proj/foo", cwd: "/proj/foo/src", terminal_type: "idea" }) }, PH);
-        assert.equal(r[0].key, "/proj/foo|idea");
+        assert.equal(r[0].key, "/proj/foo");
     });
 
     test("group key falls back to cwd when project_root missing", () => {
         const r = describeRender({ "1": agent({ project_root: undefined, cwd: "/proj/bar" }) }, PH);
-        assert.equal(r[0].key, "/proj/bar|");
+        assert.equal(r[0].key, "/proj/bar");
     });
 
     test("same project, same terminal_type → 1 group", () => {
@@ -69,26 +70,27 @@ describe("describeRender: structure", () => {
         assert.equal(r[0].agents.length, 2);
     });
 
-    test("same project, different terminal_type → 2 groups", () => {
+    test("same project, different terminal_type → 1 group (terminal_type no longer separates)", () => {
         const r = describeRender({
             "1": agent({ pid: "1", project_root: "/proj/foo", terminal_type: "idea" }),
             "2": agent({ pid: "2", project_root: "/proj/foo", terminal_type: "ghostty" }),
         }, PH);
-        assert.equal(r.length, 2);
+        assert.equal(r.length, 1);
+        assert.equal(r[0].agents.length, 2);
     });
 
-    test("same project, idea vs ghostty → groups have correct labels", () => {
+    test("same project, idea vs ghostty → 1 group with label 'foo'", () => {
         const r = describeRender({
             "1": agent({ pid: "1", project_root: "/proj/foo", terminal_type: "idea",    tty: "/dev/pts/2" }),
             "2": agent({ pid: "2", project_root: "/proj/foo", terminal_type: "ghostty", tty: "/dev/pts/5" }),
         }, PH);
-        assert.equal(r.length, 2);
-        assert.ok(r.every(g => g.label === "foo"), "both groups should have label 'foo'");
+        assert.equal(r.length, 1);
+        assert.equal(r[0].label, "foo");
     });
 
-    test("group key encodes project_root and terminal_type", () => {
+    test("group key is project_root only", () => {
         const r = describeRender({ "1": agent({ project_root: "/proj/foo", terminal_type: "idea" }) }, PH);
-        assert.equal(r[0].key, "/proj/foo|idea");
+        assert.equal(r[0].key, "/proj/foo");
     });
 });
 
@@ -457,5 +459,117 @@ describe("SC2 render: IDEA + Ghostty", () => {
     test("každá skupina má jiný terminal_type ve vstupních datech", () => {
         const types = Object.values(sc2Fixture).map(a => a.terminal_type).sort();
         assert.deepEqual(types, ["ghostty", "idea"]);
+    });
+
+    test("skupiny mají terminal_type v poli skupiny", () => {
+        const r = describeRender(sc2Fixture, PH);
+        const types = new Set(r.map(g => g.terminal_type));
+        assert.ok(types.has("idea"),    `Očekáváno idea v terminal_type skupin: ${[...types]}`);
+        assert.ok(types.has("ghostty"), `Očekáváno ghostty v terminal_type skupin: ${[...types]}`);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// TERMINAL_ICON konstanta
+// ---------------------------------------------------------------------------
+
+describe("TERMINAL_ICON", () => {
+    test("idea a ghostty jsou neprázdné stringy", () => {
+        assert.equal(typeof TERMINAL_ICON.idea, "string");
+        assert.ok(TERMINAL_ICON.idea.length > 0, "TERMINAL_ICON.idea nesmí být prázdný");
+        assert.equal(typeof TERMINAL_ICON.ghostty, "string");
+        assert.ok(TERMINAL_ICON.ghostty.length > 0, "TERMINAL_ICON.ghostty nesmí být prázdný");
+    });
+
+    test("idea a ghostty jsou navzájem různé", () => {
+        assert.notEqual(TERMINAL_ICON.idea, TERMINAL_ICON.ghostty);
+    });
+
+    test("generic je prázdný string", () => {
+        assert.equal(TERMINAL_ICON.generic, "");
+    });
+});
+
+// ---------------------------------------------------------------------------
+// describeRender: terminal_type v skupinách
+// ---------------------------------------------------------------------------
+
+describe("describeRender: terminal_type v skupinách", () => {
+    test("skupina obsahuje terminal_type z prvního agenta", () => {
+        const r = describeRender({ "1": agent({ terminal_type: "idea" }) }, PH);
+        assert.equal(r[0].terminal_type, "idea");
+    });
+
+    test("terminal_type ghostty se správně přenáší", () => {
+        const r = describeRender({ "1": agent({ terminal_type: "ghostty" }) }, PH);
+        assert.equal(r[0].terminal_type, "ghostty");
+    });
+
+    test("chybějící terminal_type → 'generic'", () => {
+        const r = describeRender({ "1": agent() }, PH);
+        assert.equal(r[0].terminal_type, "generic");
+    });
+
+    test("2 agenti stejné skupiny → sdílejí terminal_type", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", terminal_type: "ghostty", tty: "/dev/pts/1" }),
+            "2": agent({ pid: "2", terminal_type: "ghostty", tty: "/dev/pts/2" }),
+        }, PH);
+        assert.equal(r.length, 1);
+        assert.equal(r[0].terminal_type, "ghostty");
+    });
+
+    test("2 agenti různého terminal_type ve stejném projektu → 1 skupina, terminal_type z prvního agenta", () => {
+        const r = describeRender({
+            "1": agent({ pid: "1", terminal_type: "idea",    tty: "/dev/pts/1" }),
+            "2": agent({ pid: "2", terminal_type: "ghostty", tty: "/dev/pts/2" }),
+        }, PH);
+        assert.equal(r.length, 1);
+        // terminal_type skupiny pochází z prvního agenta (seřazeného)
+        assert.ok(["idea", "ghostty"].includes(r[0].terminal_type));
+    });
+});
+
+// ---------------------------------------------------------------------------
+// SC3: IDEA + Ghostty, stejné jméno projektu
+// ---------------------------------------------------------------------------
+
+const sc3Fixture = JSON.parse(
+    readFileSync(new URL("../test-fixtures/scenarios/sc3-idea-ghostty-same-name/server-state/after-all-registered.json", import.meta.url))
+);
+
+describe("SC3: IDEA + Ghostty, stejné jméno projektu (uživatelův scénář)", () => {
+    test("2 skupiny (1 per project_root, bez ohledu na terminal_type)", () => {
+        const r = describeRender(sc3Fixture, PH);
+        assert.equal(r.length, 2, `Očekávány 2 skupiny, dostáno: ${r.length}`);
+    });
+
+    test("skupiny mají disambiguované labely work/bot-platform a platform-side-quest/bot-platform", () => {
+        const r = describeRender(sc3Fixture, PH);
+        const labels = new Set(r.map(g => g.label));
+        assert.ok(labels.has("work/bot-platform"),
+            `Očekáváno work/bot-platform, dostáno: ${[...labels]}`);
+        assert.ok(labels.has("platform-side-quest/bot-platform"),
+            `Očekáváno platform-side-quest/bot-platform, dostáno: ${[...labels]}`);
+    });
+
+    test("skupina work/bot-platform má 3 agenty (1 IDEA + 2 Ghostty)", () => {
+        const r = describeRender(sc3Fixture, PH);
+        const g = r.find(g => g.label === "work/bot-platform");
+        assert.ok(g, "Skupina work/bot-platform nenalezena");
+        assert.equal(g.agents.length, 3);
+    });
+
+    test("skupina platform-side-quest/bot-platform má 2 agenty (1 IDEA + 1 Ghostty)", () => {
+        const r = describeRender(sc3Fixture, PH);
+        const g = r.find(g => g.label === "platform-side-quest/bot-platform");
+        assert.ok(g, "Skupina platform-side-quest/bot-platform nenalezena");
+        assert.equal(g.agents.length, 2);
+    });
+
+    test("agenti v skupinách mají terminal_type v raw datech (idea nebo ghostty)", () => {
+        // terminal_type zůstává na agentech, jen groupování ho ignoruje
+        const types = Object.values(sc3Fixture).map(a => a.terminal_type).sort();
+        assert.deepEqual(types, ["ghostty", "ghostty", "ghostty", "idea", "idea"]);
     });
 });
