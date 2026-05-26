@@ -1,12 +1,59 @@
 import { Router, Request, Response } from "express";
-import { execSync, spawnSync } from "child_process";
-import * as http from "http";
+import { spawnSync } from "child_process";
 import * as url from "url";
 import type { AgentStore } from "../agents";
 import { parseXid } from "../agents";
 import type { WriteStateFn } from "../index";
+import { type SystemCalls, defaultSystemCalls } from "../system-calls";
 
-export function createFocusRouter(store: AgentStore, writeState: WriteStateFn): Router {
+type WmWindow = { xid: string; desktop: string; title: string };
+
+/**
+ * Pick the best window XID for a given agent.
+ * Prefers the stored `existingWindowId` if it still exists in the window list.
+ * Falls back to title-based matching only when the stored id is gone/empty.
+ */
+export function resolveWindowId(
+  existingWindowId: string,
+  projectRoot: string,
+  windows: WmWindow[]
+): string {
+  // Validate stored window_id against live window list
+  if (existingWindowId) {
+    const target = parseXid(existingWindowId);
+    if (target !== null) {
+      for (const w of windows) {
+        if (parseXid(w.xid) === target) return existingWindowId;
+      }
+    }
+  }
+
+  // Fallback: match by project_root path segments (innermost → outermost)
+  if (projectRoot) {
+    const segments = projectRoot
+      .replace(/^\/+|\/+$/g, "")
+      .split("/")
+      .filter(Boolean);
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i];
+      for (const w of windows) {
+        const t = w.title;
+        if (
+          t === seg ||
+          t.startsWith(seg + " ") ||
+          t.startsWith(seg + "–") ||
+          t.startsWith(seg + "—")
+        ) {
+          return w.xid;
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
+export function createFocusRouter(store: AgentStore, writeState: WriteStateFn, sys: SystemCalls = defaultSystemCalls): Router {
   const router = Router();
 
   router.post("/", (req: Request, res: Response) => {
@@ -30,13 +77,13 @@ export function createFocusRouter(store: AgentStore, writeState: WriteStateFn): 
 
     // --- Window focus via wmctrl ---
     try {
-      const out = execSync("wmctrl -l", { timeout: 2000, env });
-      const windows: Array<{ xid: string; desktop: string; title: string }> = [];
+      const out = sys.wmctrlList();
+      const wmWindows: WmWindow[] = [];
 
-      for (const line of out.toString().split("\n")) {
+      for (const line of out.split("\n")) {
         const parts = line.trim().split(/\s+/);
         if (parts.length >= 3) {
-          windows.push({
+          wmWindows.push({
             xid: parts[0],
             desktop: parts[1],
             title: parts.slice(3).join(" "),
@@ -44,37 +91,16 @@ export function createFocusRouter(store: AgentStore, writeState: WriteStateFn): 
         }
       }
 
-      // Try to match by project_root path segments (innermost → outermost)
-      if (projectRoot) {
-        const segments = projectRoot
-          .replace(/^\/+|\/+$/g, "")
-          .split("/")
-          .filter(Boolean);
-        outer: for (let i = segments.length - 1; i >= 0; i--) {
-          const seg = segments[i];
-          for (const w of windows) {
-            const t = w.title;
-            if (
-              t === seg ||
-              t.startsWith(seg + " ") ||
-              t.startsWith(seg + "–") ||
-              t.startsWith(seg + "—")
-            ) {
-              windowId = w.xid;
-              break outer;
-            }
-          }
-        }
-      }
+      windowId = resolveWindowId(windowId, projectRoot, wmWindows);
 
       if (windowId) {
         // Switch to the window's desktop first
         const targetXid = parseXid(windowId);
         if (targetXid !== null) {
-          for (const w of windows) {
+          for (const w of wmWindows) {
             try {
               if (parseInt(w.xid, 16) === targetXid) {
-                spawnSync("wmctrl", ["-s", w.desktop], { env, timeout: 2000 });
+                sys.wmctrlSwitchDesktop(w.desktop);
                 break;
               }
             } catch {
@@ -82,7 +108,7 @@ export function createFocusRouter(store: AgentStore, writeState: WriteStateFn): 
             }
           }
         }
-        spawnSync("wmctrl", ["-i", "-a", windowId], { env, timeout: 2000 });
+        sys.wmctrlFocus(windowId);
       }
     } catch {
       // wmctrl not available or failed
@@ -105,16 +131,7 @@ export function createFocusRouter(store: AgentStore, writeState: WriteStateFn): 
         const params: Record<string, string> = { tabName, project: projectName };
         if (aiTitle) params["newName"] = aiTitle;
         const qs = new url.URLSearchParams(params).toString();
-        try {
-          const ideaReq = http.request(
-            `http://localhost:63342/api/terminalFocus?${qs}`,
-            { timeout: 1000 }
-          );
-          ideaReq.on("error", () => {/* ignore */});
-          ideaReq.end();
-        } catch {
-          // IDEA not running
-        }
+        sys.httpGet(`http://localhost:63342/api/terminalFocus?${qs}`);
       }
       // Ghostty tab cycling is left as a future enhancement (requires pyatspi/Xlib)
     }
