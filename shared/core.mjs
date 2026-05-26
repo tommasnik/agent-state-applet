@@ -21,7 +21,7 @@ export const FALLBACK_MS = 3000;
 
 // Back-compat exports kept for existing tests & callers.
 // (DEFAULT_CONFIG below is the authoritative source.)
-export const BALL_MARGIN = 1;
+export const TILE_MARGIN = 1;
 export const LABEL_H     = 14;
 
 export const TERMINAL_ICON = {
@@ -53,8 +53,8 @@ export const STATE_LABEL = {
 // ---------------------------------------------------------------------------
 export const DEFAULT_CONFIG = {
     // Layout
-    ballMargin:        BALL_MARGIN,
-    ballBorderRadius:  2,
+    tileMargin:        TILE_MARGIN,
+    tileBorderRadius:  2,
     labelHeight:       LABEL_H,
     labelFontSize:     10,
     groupLabelColor:   "rgba(255,255,255,0.85)",
@@ -105,20 +105,20 @@ export function projectName(agent) {
     return parts[parts.length - 1] || "?";
 }
 
-export function ballStyle(color, w, h, cfg) {
+export function tileStyle(color, w, h, cfg) {
     let c = cfg || DEFAULT_CONFIG;
     return "background-color: " + color + ";"
          + " width: "  + w + "px;"
          + " height: " + h + "px;"
-         + " border-radius: " + c.ballBorderRadius + "px;"
-         + " margin: 0 " + c.ballMargin + "px;";
+         + " border-radius: " + c.tileBorderRadius + "px;"
+         + " margin: 0 " + c.tileMargin + "px;";
 }
 
 // Returns array of group descriptors from an agents dict (pid → agent object).
 // Groups and agents within groups are ordered by PTY number (/dev/pts/N),
 // which matches the visual tab order in IDEA/Ghostty. Falls back to started_at
 // for agents without a tty.
-// Each group: { key, label, ballW, ballH, agents: [{ pid, state, color }] }
+// Each group: { key, label, tileW, tileH, agents: [{ pid, state, color }] }
 export function describeRender(agents, panelHeight, cfg) {
     let c = cfg || DEFAULT_CONFIG;
     let colors = c.colors || STATE_COLOR;
@@ -162,16 +162,16 @@ export function describeRender(agents, panelHeight, cfg) {
         let gkey  = groupOrder[gi];
         let group = groupMap[gkey];
         let n     = group.length;
-        let ballW = Math.max(panelHeight, Math.floor(panelHeight * 2 / n));
-        let ballH = panelHeight - c.labelHeight;
+        let tileW = Math.max(panelHeight, Math.floor(panelHeight * 2 / n));
+        let tileH = panelHeight - c.labelHeight;
         let path  = group[0].project_root || group[0].cwd || "";
         groups.push({
             key:           gkey,
             label:         projectName(group[0]),
             _path:         path,
             terminal_type: group[0].terminal_type || "generic",
-            ballW:         ballW,
-            ballH:         ballH,
+            tileW:         tileW,
+            tileH:         tileH,
             agents:        group.map(function(agent) {
                 return {
                     pid:   String(agent.pid),
@@ -261,10 +261,10 @@ export function makeAgentTooltipClass(deps, getCfg, host) {
     const St   = deps.St;
     const Main = deps.Main;
 
-    function AgentTooltip(ball) {
+    function AgentTooltip(tile) {
         this._markup  = "";
         this._visible = false;
-        this._ball    = ball;
+        this._tile    = tile;
         this._cfg     = getCfg;
 
         this._actor = new St.Label({ style: getCfg().tooltipStyle });
@@ -275,9 +275,9 @@ export function makeAgentTooltipClass(deps, getCfg, host) {
         Main.uiGroup.add_child(this._actor);
 
         let self = this;
-        this._enterSig  = ball.connect("enter-event",  function() { self._onEnter();  });
-        this._leaveSig  = ball.connect("leave-event",  function() { self._onLeave();  });
-        this._motionSig = ball.connect("motion-event", function() { self._onMotion(); });
+        this._enterSig  = tile.connect("enter-event",  function() { self._onEnter();  });
+        this._leaveSig  = tile.connect("leave-event",  function() { self._onLeave();  });
+        this._motionSig = tile.connect("motion-event", function() { self._onMotion(); });
     }
 
     AgentTooltip.prototype._onEnter = function() {
@@ -338,9 +338,9 @@ export function makeAgentTooltipClass(deps, getCfg, host) {
     };
 
     AgentTooltip.prototype.destroy = function() {
-        try { this._ball.disconnect(this._enterSig);  } catch (_) {}
-        try { this._ball.disconnect(this._leaveSig);  } catch (_) {}
-        try { this._ball.disconnect(this._motionSig); } catch (_) {}
+        try { this._tile.disconnect(this._enterSig);  } catch (_) {}
+        try { this._tile.disconnect(this._leaveSig);  } catch (_) {}
+        try { this._tile.disconnect(this._motionSig); } catch (_) {}
         this._actor.hide();
         this._actor.destroy();
     };
@@ -586,7 +586,7 @@ export function createIndicator(opts) {
     const box = new St.BoxLayout({ vertical: false });
     box.set_style("padding: 0;");
 
-    // pid (str) → { ball, tooltip, color, state, inBox, iconActor }
+    // pid (str) → { tile, tooltip, color, state, inBox, iconActor }
     let entries     = {};
     let transient   = [];
     let prevStates  = {};
@@ -625,38 +625,38 @@ export function createIndicator(opts) {
         for (let pid in entries) {
             if (!livePids[pid]) {
                 let e = entries[pid];
-                let parent = e.ball.get_parent && e.ball.get_parent();
-                if (parent && parent.remove_child) parent.remove_child(e.ball);
+                let parent = e.tile.get_parent && e.tile.get_parent();
+                if (parent && parent.remove_child) parent.remove_child(e.tile);
                 e.tooltip.destroy();
-                e.ball.destroy();
+                e.tile.destroy();
                 delete entries[pid];
                 delete prevStates[pid];
             }
         }
 
-        // Create new ball widgets (persist across renders)
+        // Create new tile widgets (persist across renders)
         for (let gi = 0; gi < groups.length; gi++) {
             for (let ai = 0; ai < groups[gi].agents.length; ai++) {
                 let pid = groups[gi].agents[ai].pid;
                 if (!entries[pid]) {
-                    let ball = new St.Widget({
+                    let tile = new St.Widget({
                         reactive:    true,
                         track_hover: true,
-                        style:       ballStyle((cfg.colors || STATE_COLOR).initialized, ph * 2, ph - cfg.labelHeight, cfg),
+                        style:       tileStyle((cfg.colors || STATE_COLOR).initialized, ph * 2, ph - cfg.labelHeight, cfg),
                     });
                     if (Clutter && Clutter.BinLayout) {
-                        try { ball.set_layout_manager(new Clutter.BinLayout()); } catch (_) {}
+                        try { tile.set_layout_manager(new Clutter.BinLayout()); } catch (_) {}
                     }
                     let clickPid = pid;
-                    ball.connect("button-press-event", function(_actor, event) {
+                    tile.connect("button-press-event", function(_actor, event) {
                         let btn = event && event.get_button ? event.get_button() : 1;
-                        try { deps.GLib.spawn_command_line_async('sh -c "echo ball-press pid=' + clickPid + ' btn=' + btn + ' >> /tmp/claude-flash.log"'); } catch (_) {}
+                        try { deps.GLib.spawn_command_line_async('sh -c "echo tile-press pid=' + clickPid + ' btn=' + btn + ' >> /tmp/claude-flash.log"'); } catch (_) {}
                         if (btn === 1) dispatchClick(clickPid);
                         return clickEventReturn();
                     });
-                    let tip = new TooltipClass(ball);
+                    let tip = new TooltipClass(tile);
                     entries[pid] = {
-                        ball: ball, tooltip: tip,
+                        tile: tile, tooltip: tip,
                         color: (cfg.colors || STATE_COLOR).initialized,
                         state: "initialized",
                         inBox: false,
@@ -666,11 +666,11 @@ export function createIndicator(opts) {
             }
         }
 
-        // Detach all balls from previous parents; tear down transient containers.
+        // Detach all tiles from previous parents; tear down transient containers.
         for (let pid in entries) {
             let entry  = entries[pid];
-            let parent = entry.ball.get_parent && entry.ball.get_parent();
-            if (parent && parent.remove_child) parent.remove_child(entry.ball);
+            let parent = entry.tile.get_parent && entry.tile.get_parent();
+            if (parent && parent.remove_child) parent.remove_child(entry.tile);
             entry.inBox = false;
         }
         transient.forEach(function(w) { w.destroy(); });
@@ -678,7 +678,7 @@ export function createIndicator(opts) {
         let children = box.get_children ? box.get_children() : [];
         children.forEach(function(c) { if (box.remove_child) box.remove_child(c); });
 
-        // Build one vertical block per group: label on top, balls row below.
+        // Build one vertical block per group: label on top, tiles row below.
         let now = Date.now() / 1000;
         for (let gi = 0; gi < groups.length; gi++) {
             let g = groups[gi];
@@ -705,7 +705,7 @@ export function createIndicator(opts) {
                 style: "color: " + cfg.groupLabelColor + ";"
                      + " font-size: " + cfg.labelFontSize + "px;"
                      + " padding: 0 3px; text-align: center;"
-                     + " width: " + (g.agents.length * g.ballW) + "px;",
+                     + " width: " + (g.agents.length * g.tileW) + "px;",
                 reactive:    true,
                 track_hover: true,
             });
@@ -724,21 +724,21 @@ export function createIndicator(opts) {
             });
             groupBox.add_child(groupLbl);
 
-            let ballsRow = new St.BoxLayout({ vertical: false });
+            let tilesRow = new St.BoxLayout({ vertical: false });
             for (let ai = 0; ai < g.agents.length; ai++) {
                 let agentDesc = g.agents[ai];
                 let entry     = entries[agentDesc.pid];
-                entry.ball.set_style(ballStyle(agentDesc.color, g.ballW, g.ballH, cfg));
+                entry.tile.set_style(tileStyle(agentDesc.color, g.tileW, g.tileH, cfg));
                 entry.color = agentDesc.color;
                 entry.state = agentDesc.state;
 
-                // Remove existing icon child (if any) before re-adding ball
+                // Remove existing icon child (if any) before re-adding tile
                 if (entry.iconActor) {
-                    try { entry.ball.remove_child(entry.iconActor); } catch (_) {}
+                    try { entry.tile.remove_child(entry.iconActor); } catch (_) {}
                     entry.iconActor = null;
                 }
 
-                // Add app icon as overlay inside ball widget.
+                // Add app icon as overlay inside tile widget.
                 // host.resolveAppIcon is optional — skipped when the adapter doesn't
                 // provide it (e.g. test env without GJS). Icons are cached for
                 // ICON_TTL_MS (1 h) keyed by window_id (or "pid:<pid>" as fallback).
@@ -762,29 +762,29 @@ export function createIndicator(opts) {
                     if (cached && (nowMs - cached.ts) < ICON_TTL_MS) {
                         try {
                             centerActor(cached.actor);
-                            entry.ball.add_child(cached.actor);
+                            entry.tile.add_child(cached.actor);
                             entry.iconActor = cached.actor;
                         } catch (_) {}
                     } else {
-                        let iconActor = host.resolveAppIcon(winId, agentDesc.pid, g.ballH - 4);
+                        let iconActor = host.resolveAppIcon(winId, agentDesc.pid, g.tileH - 4);
                         if (iconActor) {
                             iconCache[cacheKey] = { actor: iconActor, ts: nowMs };
                             try {
                                 centerActor(iconActor);
-                                entry.ball.add_child(iconActor);
+                                entry.tile.add_child(iconActor);
                                 entry.iconActor = iconActor;
                             } catch (_) {}
                         }
                     }
                 }
 
-                ballsRow.add_child(entry.ball);
+                tilesRow.add_child(entry.tile);
                 entry.inBox = true;
 
                 entry.tooltip.set_text(tooltipText(agents[agentDesc.pid], now, cfg));
                 prevStates[agentDesc.pid] = agentDesc.state;
             }
-            groupBox.add_child(ballsRow);
+            groupBox.add_child(tilesRow);
 
             box.add_child(groupBox);
             transient.push(groupBox);
@@ -823,11 +823,11 @@ export function createIndicator(opts) {
                 let dot = new St.BoxLayout({ vertical: false });
                 dot.set_style("width: " + ph + "px; height: " + (ph - cfg.labelHeight) + "px; padding: 0;");
 
-                let ball = new St.Widget({
+                let tile = new St.Widget({
                     style: "background-color: #444455;"
                          + " width: " + (ph - 4) + "px;"
                          + " height: " + (ph - cfg.labelHeight - 2) + "px;"
-                         + " border-radius: " + cfg.ballBorderRadius + "px;"
+                         + " border-radius: " + cfg.tileBorderRadius + "px;"
                          + " margin: 1px auto;",
                 });
                 let clockLbl = new St.Label({
@@ -837,7 +837,7 @@ export function createIndicator(opts) {
                 });
                 if (clockLbl.set_text) clockLbl.set_text("⏰");
 
-                dot.add_child(ball);
+                dot.add_child(tile);
                 dot.add_child(clockLbl);
                 schedBox.add_child(lbl);
                 schedBox.add_child(dot);
@@ -885,7 +885,7 @@ export function createIndicator(opts) {
         transient = [];
         for (let pid in entries) {
             entries[pid].tooltip.destroy();
-            entries[pid].ball.destroy();
+            entries[pid].tile.destroy();
         }
         entries = {};
     }

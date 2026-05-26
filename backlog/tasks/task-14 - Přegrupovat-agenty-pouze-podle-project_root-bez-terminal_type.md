@@ -1,10 +1,10 @@
 ---
 id: TASK-14
 title: Přegrupovat agenty pouze podle project_root (bez terminal_type)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-26 10:15'
-updated_date: '2026-05-26 10:17'
+updated_date: '2026-05-26 10:22'
 labels:
   - applet
   - core

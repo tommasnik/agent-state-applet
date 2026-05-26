@@ -1,6 +1,6 @@
 ---
 id: TASK-15
-title: Ikony aplikací v ball widgetech — plná implementace s testy
+title: Ikony aplikací v tile widgetech — plná implementace s testy
 status: Done
 assignee: []
 created_date: '2026-05-26 10:16'
@@ -20,7 +20,7 @@ ordinal: 3000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Záměr
 
-Plná produkční implementace ikon aplikací v ball widgetech na základě poznatků z task-13 (PoC). Zahrnuje testové pokrytí, refaktoring do `core.mjs` (host API), a robustní fallbacky.
+Plná produkční implementace ikon aplikací v tile widgetech na základě poznatků z task-13 (PoC). Zahrnuje testové pokrytí, refaktoring do `core.mjs` (host API), a robustní fallbacky.
 
 **Závisí na task-13** (PoC musí být hotové a úspěšné).
 
@@ -28,7 +28,7 @@ Plná produkční implementace ikon aplikací v ball widgetech na základě pozn
 
 - `host.resolveAppIcon(window_id, pid, size)` → Clutter actor nebo `null`
 - Implementace v `applet/applet.js` přes `Cinnamon.WindowTracker`
-- `core.mjs` `render()`: pokud host vrátí actor, přidej ho jako child do ballu
+- `core.mjs` `render()`: pokud host vrátí actor, přidej ho jako child do tileu
 - GJS fakes v `test/fakes/gjs-fakes.mjs` rozšířit o mock `resolveAppIcon`
 - UI testy pokrývající: ikona přítomna, fallback na null, cache chování
 

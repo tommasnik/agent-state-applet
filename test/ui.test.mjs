@@ -46,9 +46,9 @@ function setup(initialState) {
     return { env, host, ind, clicks, STATE_FILE };
 }
 
-// Walk the indicator's box tree looking for ball widgets (those whose style
+// Walk the indicator's box tree looking for tile widgets (those whose style
 // contains "background-color: #" — the per-state color).
-function findBalls(box) {
+function findTiles(box) {
     const out = [];
     function visit(node) {
         if (!node) return;
@@ -96,22 +96,22 @@ describe("createIndicator: lifecycle", () => {
 // Rendering
 // ---------------------------------------------------------------------------
 describe("createIndicator: rendering", () => {
-    test("single agent → 1 group block, 1 ball", () => {
+    test("single agent → 1 group block, 1 tile", () => {
         const { ind } = setup({ agents: { "1": agent() } });
-        const balls = findBalls(ind.box);
-        assert.equal(balls.length, 1);
-        // ball color matches "working" state
-        assert.ok(balls[0].style.includes(STATE_COLOR.working), "ball uses working color");
+        const tiles = findTiles(ind.box);
+        assert.equal(tiles.length, 1);
+        // tile color matches "working" state
+        assert.ok(tiles[0].style.includes(STATE_COLOR.working), "tile uses working color");
         ind.destroy();
     });
 
-    test("2 agents same project → 1 group, 2 balls", () => {
+    test("2 agents same project → 1 group, 2 tiles", () => {
         const { ind } = setup({ agents: {
             "1": agent({ pid: "1", started_at: 1 }),
             "2": agent({ pid: "2", started_at: 2 }),
         }});
-        const balls = findBalls(ind.box);
-        assert.equal(balls.length, 2);
+        const tiles = findTiles(ind.box);
+        assert.equal(tiles.length, 2);
         // Only one group block = one direct child + (no separator before first)
         assert.equal(ind.box.children.length, 1);
         ind.destroy();
@@ -158,25 +158,25 @@ describe("createIndicator: rendering", () => {
 // State transitions
 // ---------------------------------------------------------------------------
 describe("createIndicator: state transitions", () => {
-    test("ball widget persists across re-renders for same pid", () => {
+    test("tile widget persists across re-renders for same pid", () => {
         const { ind } = setup({ agents: { "1": agent({ state: "working" }) } });
-        const ballBefore = ind.__test_getEntries()["1"].ball;
+        const tileBefore = ind.__test_getEntries()["1"].tile;
         ind.__test_setState({ agents: { "1": agent({ state: "done" }) } });
-        const ballAfter = ind.__test_getEntries()["1"].ball;
-        assert.strictEqual(ballBefore, ballAfter, "same ball widget reused");
-        assert.ok(ballAfter.style.includes(STATE_COLOR.done), "ball restyled to done color");
+        const tileAfter = ind.__test_getEntries()["1"].tile;
+        assert.strictEqual(tileBefore, tileAfter, "same tile widget reused");
+        assert.ok(tileAfter.style.includes(STATE_COLOR.done), "tile restyled to done color");
         assert.equal(ind.__test_getEntries()["1"].state, "done");
         ind.destroy();
     });
 
-    test("stale pid → ball destroyed", () => {
+    test("stale pid → tile destroyed", () => {
         const { ind } = setup({ agents: {
             "1": agent({ pid: "1" }),
             "2": agent({ pid: "2" }),
         }});
-        const ball1 = ind.__test_getEntries()["1"].ball;
+        const tile1 = ind.__test_getEntries()["1"].tile;
         ind.__test_setState({ agents: { "2": agent({ pid: "2" }) } });
-        assert.ok(ball1._destroyed, "pid 1 ball was destroyed");
+        assert.ok(tile1._destroyed, "pid 1 tile was destroyed");
         assert.equal(Object.keys(ind.__test_getEntries()).length, 1);
         ind.destroy();
     });
@@ -186,20 +186,20 @@ describe("createIndicator: state transitions", () => {
 // Click handling — unified across platforms
 // ---------------------------------------------------------------------------
 describe("createIndicator: clicks", () => {
-    test("click on working ball → onClick(pid, agent, 'focus')", () => {
+    test("click on working tile → onClick(pid, agent, 'focus')", () => {
         const { ind, clicks } = setup({ agents: { "1": agent({ state: "working" }) } });
-        const ball = ind.__test_getEntries()["1"].ball;
-        ball.emit("button-press-event", { get_button: () => 1 });
+        const tile = ind.__test_getEntries()["1"].tile;
+        tile.emit("button-press-event", { get_button: () => 1 });
         assert.equal(clicks.length, 1);
         assert.equal(clicks[0].pid, "1");
         assert.equal(clicks[0].action, "focus");
         ind.destroy();
     });
 
-    test("click on done ball → onClick(pid, agent, 'reset')", () => {
+    test("click on done tile → onClick(pid, agent, 'reset')", () => {
         const { ind, clicks } = setup({ agents: { "1": agent({ state: "done" }) } });
-        const ball = ind.__test_getEntries()["1"].ball;
-        ball.emit("button-press-event", { get_button: () => 1 });
+        const tile = ind.__test_getEntries()["1"].tile;
+        tile.emit("button-press-event", { get_button: () => 1 });
         assert.equal(clicks.length, 1);
         assert.equal(clicks[0].action, "reset");
         ind.destroy();
@@ -207,8 +207,8 @@ describe("createIndicator: clicks", () => {
 
     test("right-click → no onClick", () => {
         const { ind, clicks } = setup({ agents: { "1": agent() } });
-        const ball = ind.__test_getEntries()["1"].ball;
-        ball.emit("button-press-event", { get_button: () => 3 });
+        const tile = ind.__test_getEntries()["1"].tile;
+        tile.emit("button-press-event", { get_button: () => 3 });
         assert.equal(clicks.length, 0);
         ind.destroy();
     });
@@ -230,10 +230,10 @@ describe("createIndicator: clicks", () => {
 // Tooltip
 // ---------------------------------------------------------------------------
 describe("createIndicator: tooltip", () => {
-    test("ball hover → tooltip shown with state label", () => {
+    test("tile hover → tooltip shown with state label", () => {
         const { ind } = setup({ agents: { "1": agent({ state: "working" }) } });
         const entry = ind.__test_getEntries()["1"];
-        entry.ball.emit("enter-event");
+        entry.tile.emit("enter-event");
         const markup = entry.tooltip._actor.clutter_text._markup;
         assert.ok(markup.includes("Working"), "tooltip contains state label");
         assert.ok(markup.includes("foo"),     "tooltip contains project name");
@@ -243,9 +243,9 @@ describe("createIndicator: tooltip", () => {
     test("leave hides tooltip", () => {
         const { ind } = setup({ agents: { "1": agent() } });
         const entry = ind.__test_getEntries()["1"];
-        entry.ball.emit("enter-event");
+        entry.tile.emit("enter-event");
         assert.equal(entry.tooltip._actor._visible, true);
-        entry.ball.emit("leave-event");
+        entry.tile.emit("leave-event");
         assert.equal(entry.tooltip._actor._visible, false);
         ind.destroy();
     });
@@ -257,13 +257,13 @@ describe("createIndicator: tooltip", () => {
 describe("createIndicator: file watcher", () => {
     test("file change → debounced update", () => {
         const { ind, env, STATE_FILE } = setup({ agents: {} });
-        assert.equal(findBalls(ind.box).length, 0);
+        assert.equal(findTiles(ind.box).length, 0);
         env.setFile(STATE_FILE, { agents: { "1": agent() } });
         env.triggerFileChange(STATE_FILE);
         // Drain the debounce timer
         env.runAllTimers();
         // The timer callback calls update() which reads the new file
-        assert.equal(findBalls(ind.box).length, 1, "ball appeared after file change");
+        assert.equal(findTiles(ind.box).length, 1, "tile appeared after file change");
         ind.destroy();
     });
 });
@@ -272,20 +272,20 @@ describe("createIndicator: file watcher", () => {
 // applyConfig
 // ---------------------------------------------------------------------------
 describe("createIndicator: applyConfig", () => {
-    test("override colors → ball restyled on next render", () => {
+    test("override colors → tile restyled on next render", () => {
         const { ind } = setup({ agents: { "1": agent({ state: "working" }) } });
         ind.applyConfig({ colors: { ...STATE_COLOR, working: "#deadbeef" } });
-        const ball = ind.__test_getEntries()["1"].ball;
-        assert.ok(ball.style.includes("#deadbeef"), "custom color applied");
+        const tile = ind.__test_getEntries()["1"].tile;
+        assert.ok(tile.style.includes("#deadbeef"), "custom color applied");
         ind.destroy();
     });
 
     test("partial config merges with defaults", () => {
         const { ind } = setup({ agents: {} });
-        ind.applyConfig({ ballBorderRadius: 99 });
+        ind.applyConfig({ tileBorderRadius: 99 });
         const cfg = ind.__test_getCfg();
-        assert.equal(cfg.ballBorderRadius, 99);
-        assert.equal(cfg.ballMargin, DEFAULT_CONFIG.ballMargin, "other defaults preserved");
+        assert.equal(cfg.tileBorderRadius, 99);
+        assert.equal(cfg.tileMargin, DEFAULT_CONFIG.tileMargin, "other defaults preserved");
         ind.destroy();
     });
 });
@@ -301,7 +301,7 @@ describe("createIndicator: tooltip placement", () => {
         // Make the tooltip actor have known size for math
         entry.tooltip._actor.width  = 100;
         entry.tooltip._actor.height = 50;
-        entry.ball.emit("enter-event");
+        entry.tile.emit("enter-event");
         const ty = entry.tooltip._actor.y;
         assert.ok(ty < 200, `tooltip y ${ty} should be above cursor y=200`);
         ind.destroy();
@@ -313,7 +313,7 @@ describe("createIndicator: tooltip placement", () => {
         const entry = ind.__test_getEntries()["1"];
         entry.tooltip._actor.width  = 100;
         entry.tooltip._actor.height = 50;
-        entry.ball.emit("enter-event");
+        entry.tile.emit("enter-event");
         const ty = entry.tooltip._actor.y;
         assert.ok(ty > 200, `tooltip y ${ty} should be below cursor y=200`);
         ind.destroy();
@@ -326,7 +326,7 @@ describe("createIndicator: tooltip placement", () => {
         const entry = ind.__test_getEntries()["1"];
         entry.tooltip._actor.width  = 100;
         entry.tooltip._actor.height = 50;
-        entry.ball.emit("enter-event");
+        entry.tile.emit("enter-event");
         const ty = entry.tooltip._actor.y;
         assert.ok(ty < 200, `forced 'above' should still place tooltip above cursor; got y=${ty}`);
         ind.destroy();
@@ -354,15 +354,15 @@ function setupWithIcon(initialState, resolveAppIconFn) {
 }
 
 describe("createIndicator: app icons", () => {
-    test("host.resolveAppIcon present → icon actor added as child of ball", () => {
+    test("host.resolveAppIcon present → icon actor added as child of tile", () => {
         const iconActor = new FakeActor();
         const { ind } = setupWithIcon(
             { agents: { "1": agent({ window_id: "0x100001" }) } },
             () => iconActor
         );
         const entry = ind.__test_getEntries()["1"];
-        assert.ok(entry.ball.children.includes(iconActor),
-            "icon actor should be a child of the ball widget");
+        assert.ok(entry.tile.children.includes(iconActor),
+            "icon actor should be a child of the tile widget");
         ind.destroy();
     });
 
@@ -374,9 +374,9 @@ describe("createIndicator: app icons", () => {
         const entry = ind.__test_getEntries()["1"];
         assert.equal(entry.iconActor, null,
             "iconActor should be null when resolveAppIcon returns null");
-        // Ball should have no children (no icon was added).
-        assert.equal(entry.ball.children.length, 0,
-            "ball should have no children when icon is null");
+        // Tile should have no children (no icon was added).
+        assert.equal(entry.tile.children.length, 0,
+            "tile should have no children when icon is null");
         ind.destroy();
     });
 
@@ -485,7 +485,7 @@ describe("createIndicator: app icons", () => {
             () => iconActor
         );
         const entry = ind.__test_getEntries()["1"];
-        assert.ok(entry.ball.children.includes(iconActor),
+        assert.ok(entry.tile.children.includes(iconActor),
             "icon should appear regardless of terminal_type");
         ind.destroy();
     });

@@ -1,6 +1,6 @@
 ---
 id: TASK-13
-title: 'PoC: ikona aplikace uvnitř ball widgetu (ověření funkčnosti)'
+title: 'PoC: ikona aplikace uvnitř tile widgetu (ověření funkčnosti)'
 status: Done
 assignee: []
 created_date: '2026-05-26 10:13'
@@ -20,7 +20,7 @@ ordinal: 2000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Záměr
 
-Ověřit, zda jde v Cinnamon appletu zobrazit ikonu aplikace uvnitř barevného ball widgetu pomocí `Cinnamon.WindowTracker`. Výsledkem PoC je buď funkční prototyp nebo zdokumentované překážky.
+Ověřit, zda jde v Cinnamon appletu zobrazit ikonu aplikace uvnitř barevného tile widgetu pomocí `Cinnamon.WindowTracker`. Výsledkem PoC je buď funkční prototyp nebo zdokumentované překážky.
 
 **Závisí na task-14** (přegrupování) — PoC se dělá na novém groupování.
 
@@ -36,7 +36,7 @@ let texture = app.create_icon_texture(size);      // Clutter actor
 Flow v appletu:
 1. Z `window_id` (hex) najdi `MetaWindow` přes `global.get_window_actors()`
 2. `tracker.get_window_app(metaWindow)` → `CinnamonApp`
-3. `app.create_icon_texture(ballH - 4)` → přidej jako child do ball widgetu
+3. `app.create_icon_texture(tileH - 4)` → přidej jako child do tile widgetu
 4. Cache: `window_id → CinnamonApp`, TTL 1 hodina, lazy-loaded
 
 ## Co PoC ověří
@@ -48,7 +48,7 @@ Flow v appletu:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 IDEA i Ghostty ball zobrazuje rozpoznatelnou ikonu aplikace
+- [x] #1 IDEA i Ghostty tile zobrazuje rozpoznatelnou ikonu aplikace
 - [x] #2 Null app fallback funguje bez pádu
 - [x] #3 Cache TTL 1 hodina implementována
 - [x] #4 Zdokumentováno co funguje/nefunguje pro task-15
@@ -68,7 +68,7 @@ Flow v appletu:
 **`shared/core.mjs`**:
 - Přidán `iconCache = {}` a `ICON_TTL_MS = 3600 * 1000` (AC #3)
 - `entry` rozšířen o `iconActor: null`
-- V render smyčce po `entry.ball.set_style()`: odstraní starý iconActor, pak lazy-load přes cache
+- V render smyčce po `entry.tile.set_style()`: odstraní starý iconActor, pak lazy-load přes cache
 
 ### Architektura
 
@@ -86,7 +86,7 @@ Flow v appletu:
 **Potenciální omezení pro task-15**:
 - Agenti Claude Code běží jako subprocess IDEA/Ghostty — `tracker.get_app_from_pid(pid)` pro PID claude procesu nemusí vrátit správnou app (vrátí app pro shell, ne IDEA)
 - `window_id` cesta je spolehlivější — pokud agent má `window_id`, tracker najde správné okno
-- Ikona se přidává jako child do `St.Widget` (ball) — St.Widget podporuje add_child() přes ClutterActor, funguje pokud Clutter actor má správné rozměry
+- Ikona se přidává jako child do `St.Widget` (tile) — St.Widget podporuje add_child() přes ClutterActor, funguje pokud Clutter actor má správné rozměry
 - Cache TTL 1 hodina: actor se uloží, ale pokud applet přidá actor jako child jiného widgetu, nelze ho přidat znovu bez remove_child — logika to řeší (remove před add)
 
 ### Testy

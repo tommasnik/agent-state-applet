@@ -4,11 +4,11 @@ import {
     describeRender,
     formatDuration,
     projectName,
-    ballStyle,
+    tileStyle,
     tooltipText,
     STATE_COLOR,
     LABEL_H,
-    BALL_MARGIN,
+    TILE_MARGIN,
     TERMINAL_ICON,
 } from "../shared/core.mjs";
 
@@ -171,46 +171,46 @@ describe("describeRender: state colors", () => {
 });
 
 // ---------------------------------------------------------------------------
-// describeRender — ball dimensions
+// describeRender — tile dimensions
 // ---------------------------------------------------------------------------
 
-describe("describeRender: ball dimensions", () => {
-    test("ballH = panelHeight - LABEL_H", () => {
+describe("describeRender: tile dimensions", () => {
+    test("tileH = panelHeight - LABEL_H", () => {
         const r = describeRender({ "1": agent() }, PH);
-        assert.equal(r[0].ballH, PH - LABEL_H);
+        assert.equal(r[0].tileH, PH - LABEL_H);
     });
 
-    test("1 agent → ballW = panelHeight * 2", () => {
+    test("1 agent → tileW = panelHeight * 2", () => {
         const r = describeRender({ "1": agent() }, PH);
-        assert.equal(r[0].ballW, PH * 2);
+        assert.equal(r[0].tileW, PH * 2);
     });
 
-    test("2 agents in group → ballW = panelHeight (min clamp)", () => {
+    test("2 agents in group → tileW = panelHeight (min clamp)", () => {
         // floor(40 * 2 / 2) = 40 = PH → clamped to PH
         const r = describeRender({
             "1": agent({ pid: "1" }),
             "2": agent({ pid: "2" }),
         }, PH);
-        assert.equal(r[0].ballW, PH);
+        assert.equal(r[0].tileW, PH);
     });
 
-    test("8 agents → ballW never goes below panelHeight", () => {
+    test("8 agents → tileW never goes below panelHeight", () => {
         const agents = {};
         for (let i = 0; i < 8; i++)
             agents[i] = agent({ pid: String(i), started_at: i });
         const r = describeRender(agents, PH);
-        assert.ok(r[0].ballW >= PH, `ballW ${r[0].ballW} should be >= ${PH}`);
+        assert.ok(r[0].tileW >= PH, `tileW ${r[0].tileW} should be >= ${PH}`);
     });
 
-    test("all agents in same group share ballW", () => {
+    test("all agents in same group share tileW", () => {
         const r = describeRender({
             "1": agent({ pid: "1" }),
             "2": agent({ pid: "2" }),
             "3": agent({ pid: "3" }),
         }, PH);
-        const bw = r[0].ballW;
-        assert.ok(r[0].agents.every(() => true), "ballW is per-group, not per-agent");
-        // all three agents see the same group ballW
+        const bw = r[0].tileW;
+        assert.ok(r[0].agents.every(() => true), "tileW is per-group, not per-agent");
+        // all three agents see the same group tileW
         assert.equal(bw, Math.max(PH, Math.floor(PH * 2 / 3)));
     });
 });
@@ -318,20 +318,20 @@ describe("projectName", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ballStyle
+// tileStyle
 // ---------------------------------------------------------------------------
 
-describe("ballStyle", () => {
+describe("tileStyle", () => {
     test("contains the given color", () => {
-        assert.ok(ballStyle("#ff0000", 40, 26).includes("#ff0000"));
+        assert.ok(tileStyle("#ff0000", 40, 26).includes("#ff0000"));
     });
     test("contains width and height", () => {
-        const s = ballStyle("#aabbcc", 50, 20);
+        const s = tileStyle("#aabbcc", 50, 20);
         assert.ok(s.includes("width: 50px"));
         assert.ok(s.includes("height: 20px"));
     });
-    test("contains BALL_MARGIN", () => {
-        assert.ok(ballStyle("#000", 10, 10).includes(`margin: 0 ${BALL_MARGIN}px`));
+    test("contains TILE_MARGIN", () => {
+        assert.ok(tileStyle("#000", 10, 10).includes(`margin: 0 ${TILE_MARGIN}px`));
     });
 });
 
