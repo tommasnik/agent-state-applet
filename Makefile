@@ -23,7 +23,7 @@ applet: applet/core.js
 	  --dest org.Cinnamon --object-path /org/Cinnamon \
 	  --method org.Cinnamon.ReloadXlet \
 	  "$(APPLET_UUID)" "APPLET"
-	@echo "applet reloaded"
+	@echo "applet reloaded — pokud změny nejsou vidět: Alt+F2 → r → Enter (restart Cinnamon, vyčistí GJS cache)"
 
 # GNOME dev reload (disable+enable cycles the extension without shell restart)
 gnome:
