@@ -43,7 +43,16 @@ function writeState(): void {
   const agents = store.snapshot();
   const reviews = Array.from(pendingReviews.values());
   const scheduled = getDb()
-    .prepare("SELECT id, name, project_path, cron, type, enabled FROM schedules WHERE enabled = 1")
+    .prepare(`
+      SELECT s.id, s.name, s.project_path, s.cron, s.type, s.enabled
+      FROM schedules s
+      WHERE s.enabled = 1
+        AND EXISTS (
+          SELECT 1 FROM runs r
+          WHERE r.schedule_id = s.id
+            AND r.status = 'running'
+        )
+    `)
     .all() as ScheduledEntry[];
   writeStateFile(agents, reviews, scheduled);
 }

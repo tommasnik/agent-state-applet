@@ -31,14 +31,21 @@ export function runInteractive(
 
   const escapedPath = projectPath.replace(/'/g, "'\\''");
   const escapedPrompt = prompt.replace(/'/g, "'\\''");
+  const display = process.env.DISPLAY || ":0";
   const child = spawn(
     "ghostty",
     [`--working-directory=${projectPath}`, "-e", "bash", "-lic", `cd '${escapedPath}' && exec claude '${escapedPrompt}'`],
-    { detached: true, stdio: "ignore" }
+    { detached: true, stdio: "ignore", env: { ...process.env, DISPLAY: display } }
   );
   child.on("error", (err) => {
     console.error(`[runner] ghostty launch failed: ${err.message}`);
     finalizeRun(runId, "failed", `Launch failed: ${err.message}`);
+  });
+  child.on("exit", (code) => {
+    if (code !== null && code !== 0) {
+      console.error(`[runner] ghostty exited with code ${code} (DISPLAY=${display})`);
+      finalizeRun(runId, "failed", `Ghostty exited with code ${code}`);
+    }
   });
   child.unref();
 
