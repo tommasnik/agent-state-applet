@@ -105,17 +105,17 @@ async function getGitRemoteUrl(projectPath: string): Promise<string> {
  * Handles both SSH (git@gitlab.com:ns/repo.git) and HTTPS forms.
  */
 function extractGitLabProjectId(remoteUrl: string): string | null {
-  // SSH: git@gitlab.com:namespace/repo.git
-  const sshMatch = remoteUrl.match(/git@gitlab\.com[:/](.+?)(?:\.git)?$/);
+  // SSH: git@<host>:namespace/repo.git
+  const sshMatch = remoteUrl.match(/git@[^:]+:(.+?)(?:\.git)?$/);
   if (sshMatch) return sshMatch[1];
-  // HTTPS: https://gitlab.com/namespace/repo.git
-  const httpsMatch = remoteUrl.match(/https?:\/\/(?:[^@]+@)?gitlab\.com\/(.+?)(?:\.git)?$/);
+  // HTTPS: https://<host>/namespace/repo.git
+  const httpsMatch = remoteUrl.match(/https?:\/\/(?:[^@]+@)?[^/]+\/(.+?)(?:\.git)?$/);
   if (httpsMatch) return httpsMatch[1];
   return null;
 }
 
 function detectProvider(remoteUrl: string): "gitlab" | null {
-  if (remoteUrl.includes("gitlab.com")) return "gitlab";
+  if (remoteUrl.includes("gitlab")) return "gitlab";
   return null;
 }
 
@@ -147,9 +147,11 @@ async function fetchPipeline(projectPath: string): Promise<PipelineData | null> 
 
   // 3. Detect provider
   const provider = detectProvider(remoteUrl);
+  process.stderr.write(`[pipeline] ${projectPath}: branch=${branch} remote=${remoteUrl} provider=${provider}\n`);
   if (provider !== "gitlab") return null;
 
   const projectId = extractGitLabProjectId(remoteUrl);
+  process.stderr.write(`[pipeline] ${projectPath}: projectId=${projectId}\n`);
   if (!projectId) return null;
 
   const encodedId = encodeURIComponent(projectId);
@@ -167,6 +169,7 @@ async function fetchPipeline(projectPath: string): Promise<PipelineData | null> 
     return null;
   }
 
+  process.stderr.write(`[pipeline] ${projectPath}: found ${pipelines.length} pipeline(s)\n`);
   if (pipelines.length === 0) return null;
 
   const pipeline = pipelines[0] as {
