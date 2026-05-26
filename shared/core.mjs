@@ -641,6 +641,9 @@ export function createIndicator(opts) {
                         track_hover: true,
                         style:       ballStyle((cfg.colors || STATE_COLOR).initialized, ph * 2, ph - cfg.labelHeight, cfg),
                     });
+                    if (Clutter && Clutter.BinLayout) {
+                        try { ball.set_layout_manager(new Clutter.BinLayout()); } catch (_) {}
+                    }
                     let clickPid = pid;
                     ball.connect("button-press-event", function(_actor, event) {
                         let btn = event && event.get_button ? event.get_button() : 1;
@@ -709,8 +712,7 @@ export function createIndicator(opts) {
                 if (groupLbl.clutter_text.set_single_line_mode)
                     groupLbl.clutter_text.set_single_line_mode(true);
             }
-            let termIcon = TERMINAL_ICON[g.terminal_type] || "";
-            if (groupLbl.set_text) groupLbl.set_text(termIcon ? termIcon + " " + g.label : g.label);
+            if (groupLbl.set_text) groupLbl.set_text(g.label);
             let labelClickPid = focusPid;
             groupLbl.connect("button-press-event", function(_actor, event) {
                 let btn = event && event.get_button ? event.get_button() : 1;
@@ -741,8 +743,19 @@ export function createIndicator(opts) {
                     let cached = iconCache[cacheKey];
                     let nowMs = Date.now();
 
+                    function centerActor(actor) {
+                        try {
+                            if (Clutter && Clutter.ActorAlign) {
+                                if (actor.set_x_align) actor.set_x_align(Clutter.ActorAlign.CENTER);
+                                if (actor.set_y_align) actor.set_y_align(Clutter.ActorAlign.CENTER);
+                            }
+                            if (actor.set_x_expand) actor.set_x_expand(true);
+                            if (actor.set_y_expand) actor.set_y_expand(true);
+                        } catch (_) {}
+                    }
                     if (cached && (nowMs - cached.ts) < ICON_TTL_MS) {
                         try {
+                            centerActor(cached.actor);
                             entry.ball.add_child(cached.actor);
                             entry.iconActor = cached.actor;
                         } catch (_) {}
@@ -751,6 +764,7 @@ export function createIndicator(opts) {
                         if (iconActor) {
                             iconCache[cacheKey] = { actor: iconActor, ts: nowMs };
                             try {
+                                centerActor(iconActor);
                                 entry.ball.add_child(iconActor);
                                 entry.iconActor = iconActor;
                             } catch (_) {}

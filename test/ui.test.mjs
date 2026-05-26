@@ -135,23 +135,21 @@ describe("createIndicator: rendering", () => {
         ind.destroy();
     });
 
-    test("group label includes terminal icon for idea", () => {
+    test("group label for idea shows only project name (no terminal icon prefix)", () => {
         const { ind } = setup({ agents: { "1": agent({ project_root: "/x/myproject", terminal_type: "idea" }) } });
         const labels = findLabels(ind.box);
         const found = labels.find(l => l._text && l._text.includes("myproject"));
         assert.ok(found, "label with project name not found");
-        assert.ok(found._text.includes(TERMINAL_ICON.idea),
-            `Label '${found._text}' neobsahuje IDEA ikonu '${TERMINAL_ICON.idea}'`);
+        assert.strictEqual(found._text, "myproject", `Label should be just 'myproject', got '${found._text}'`);
         ind.destroy();
     });
 
-    test("group label includes terminal icon for ghostty", () => {
+    test("group label for ghostty shows only project name (no terminal icon prefix)", () => {
         const { ind } = setup({ agents: { "1": agent({ project_root: "/x/myproject", terminal_type: "ghostty" }) } });
         const labels = findLabels(ind.box);
         const found = labels.find(l => l._text && l._text.includes("myproject"));
         assert.ok(found, "label with project name not found");
-        assert.ok(found._text.includes(TERMINAL_ICON.ghostty),
-            `Label '${found._text}' neobsahuje Ghostty ikonu '${TERMINAL_ICON.ghostty}'`);
+        assert.strictEqual(found._text, "myproject", `Label should be just 'myproject', got '${found._text}'`);
         ind.destroy();
     });
 });
