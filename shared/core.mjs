@@ -204,7 +204,7 @@ export function describeRender(agents, panelHeight, cfg) {
     return groups;
 }
 
-export function tooltipText(agent, now, cfg) {
+export function tooltipText(agent, now, cfg, allAgents) {
     let c = cfg || DEFAULT_CONFIG;
     let colors = c.colors || STATE_COLOR;
     let labels = c.labels || STATE_LABEL;
@@ -219,6 +219,10 @@ export function tooltipText(agent, now, cfg) {
     function esc(s) {
         return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
+    function trunc(s, n) {
+        if (!s) return "";
+        return s.length > n ? s.slice(0, n) + "…" : s;
+    }
     let SEP = '<span color="#333344">────────────────────────────────</span>';
 
     let lines = [];
@@ -228,8 +232,73 @@ export function tooltipText(agent, now, cfg) {
         lines.push(SEP);
     }
 
-    lines.push('<span size="large" weight="bold" color="#ffffff">' + esc(project) + '</span>');
+    // Project name — append [agent_type] badge for subagents
+    let projectLabel = esc(project);
+    if (agent.agent_type) {
+        projectLabel += ' <span color="#888888">[' + esc(agent.agent_type) + ']</span>';
+    }
+    lines.push('<span size="large" weight="bold" color="#ffffff">' + projectLabel + '</span>');
     lines.push('<span color="' + stateColor + '" weight="bold">● ' + esc(stateLabel + toolInfo) + '</span>');
+
+    // Prompt
+    if (agent.prompt) {
+        lines.push(SEP);
+        lines.push('<span color="#aaaacc" style="italic">"' + esc(trunc(agent.prompt, 80)) + '"</span>');
+    }
+
+    // Recent activity (last 2-3 tool calls)
+    if (agent.activity && agent.activity.length > 0) {
+        lines.push(SEP);
+        for (let i = 0; i < agent.activity.length; i++) {
+            lines.push('<span color="#888888">▶ </span>' + esc(agent.activity[i]));
+        }
+    }
+
+    // Todos
+    if (agent.todos && agent.todos.length > 0) {
+        lines.push(SEP);
+        lines.push('<span color="#888888">Todos</span>');
+        let TODO_ICON  = { completed: "✓", in_progress: "▶", pending: "·" };
+        let TODO_COLOR = { completed: "#44bb44", in_progress: "#e8c000", pending: "#888888" };
+        for (let i = 0; i < agent.todos.length; i++) {
+            let todo  = agent.todos[i];
+            let icon  = TODO_ICON[todo.status]  || "·";
+            let color = TODO_COLOR[todo.status] || "#888888";
+            lines.push(
+                ' <span color="' + color + '">' + icon + '</span> '
+                + esc(todo.content || "")
+            );
+        }
+    }
+
+    // Subagents — from allAgents dict: other agents in same project with agent_type set
+    if (allAgents) {
+        let subagents = [];
+        let keys = Object.keys(allAgents);
+        for (let i = 0; i < keys.length; i++) {
+            let a = allAgents[keys[i]];
+            if (a.agent_type
+                && (a.project_root || a.cwd || "") === (agent.project_root || agent.cwd || "")
+                && String(a.pid) !== String(agent.pid)) {
+                subagents.push(a);
+            }
+        }
+        if (subagents.length > 0) {
+            lines.push(SEP);
+            lines.push('<span color="#888888">Subagents (' + subagents.length + ')</span>');
+            for (let i = 0; i < subagents.length; i++) {
+                let sa      = subagents[i];
+                let saColor = colors[sa.state] || "#888888";
+                let saLabel = labels[sa.state] || sa.state;
+                lines.push(
+                    ' <span color="' + saColor + '">●</span> '
+                    + esc(sa.agent_type) + ': '
+                    + '<span color="' + saColor + '">' + esc(saLabel) + '</span>'
+                );
+            }
+        }
+    }
+
     lines.push(SEP);
     lines.push(
         '<span color="#888888">running </span><span weight="bold">' + running + '</span>'
@@ -606,10 +675,9 @@ export function createIndicator(opts) {
         return Clutter && Clutter.EVENT_STOP != null ? Clutter.EVENT_STOP : true;
     }
 
-    function render(agents, scheduled) {
+    function render(agents) {
         try { deps.GLib.spawn_command_line_async('sh -c "echo render n=' + Object.keys(agents).length + ' >> /tmp/claude-flash.log"'); } catch (_) {}
         lastAgents = agents;
-        lastScheduled = scheduled || [];
 
         let ph     = host.panelHeight ? host.panelHeight() : 32;
         let groups = describeRender(agents, ph, cfg);
@@ -759,7 +827,7 @@ export function createIndicator(opts) {
                 tilesRow.add_child(entry.tile);
                 entry.inBox = true;
 
-                entry.tooltip.set_text(tooltipText(agents[agentDesc.pid], now, cfg));
+                entry.tooltip.set_text(tooltipText(agents[agentDesc.pid], now, cfg, agents));
                 prevStates[agentDesc.pid] = agentDesc.state;
             }
             groupBox.add_child(tilesRow);
@@ -768,68 +836,12 @@ export function createIndicator(opts) {
             transient.push(groupBox);
         }
 
-        // Render scheduled entries (upcoming / waiting to fire)
-        let schedList = scheduled || [];
-        if (schedList.length > 0) {
-            if (groups.length > 0) {
-                let sep = new St.Widget({
-                    style: "width: 1px; background-color: " + cfg.separatorColor + ";"
-                         + " height: " + ph + "px; margin: 0 2px;",
-                });
-                box.add_child(sep);
-                transient.push(sep);
-            }
-            for (let si = 0; si < schedList.length; si++) {
-                let s = schedList[si];
-                let proj = (s.project_path || s.name || "?").replace(/\/+$/, "").split("/").pop() || "?";
-                let schedBox = new St.BoxLayout({ vertical: true });
-
-                let lbl = new St.Label({
-                    style: "color: rgba(200,200,200,0.55);"
-                         + " font-size: " + cfg.labelFontSize + "px;"
-                         + " padding: 0 2px; text-align: center;"
-                         + " width: " + ph + "px;",
-                });
-                if (lbl.clutter_text && Pango && Pango.EllipsizeMode) {
-                    if (lbl.clutter_text.set_ellipsize)
-                        lbl.clutter_text.set_ellipsize(Pango.EllipsizeMode.END);
-                    if (lbl.clutter_text.set_single_line_mode)
-                        lbl.clutter_text.set_single_line_mode(true);
-                }
-                if (lbl.set_text) lbl.set_text(proj);
-
-                let dot = new St.BoxLayout({ vertical: false });
-                dot.set_style("width: " + ph + "px; height: " + (ph - cfg.labelHeight) + "px; padding: 0;");
-
-                let tile = new St.Widget({
-                    style: "background-color: #444455;"
-                         + " width: " + (ph - 4) + "px;"
-                         + " height: " + (ph - cfg.labelHeight - 2) + "px;"
-                         + " border-radius: " + cfg.tileBorderRadius + "px;"
-                         + " margin: 1px auto;",
-                });
-                let clockLbl = new St.Label({
-                    style: "color: rgba(220,220,255,0.7);"
-                         + " font-size: " + Math.max(8, ph - cfg.labelHeight - 6) + "px;"
-                         + " margin: 0; padding: 0;",
-                });
-                if (clockLbl.set_text) clockLbl.set_text("⏰");
-
-                dot.add_child(tile);
-                dot.add_child(clockLbl);
-                schedBox.add_child(lbl);
-                schedBox.add_child(dot);
-
-                box.add_child(schedBox);
-                transient.push(schedBox);
-            }
-        }
     }
 
     function update() {
         let data = readJSONFile(deps, cfg.stateFile);
         if (!data) return;  // keep current display on read failure
-        render(data.agents || {}, data.scheduled || []);
+        render(data.agents || {});
     }
 
     // ---- timers / watchers ----
@@ -848,11 +860,9 @@ export function createIndicator(opts) {
         });
     });
 
-    let lastScheduled = [];
-
     function applyConfig(partial) {
         cfg = Object.assign({}, cfg, partial || {});
-        if (Object.keys(lastAgents).length > 0) render(lastAgents, lastScheduled);
+        if (Object.keys(lastAgents).length > 0) render(lastAgents);
     }
 
     function destroy() {
@@ -879,7 +889,7 @@ export function createIndicator(opts) {
         destroy:  destroy,
 
         // Test hooks — cheap & harmless to leave in production builds.
-        __test_setState:   function(data) { render((data && data.agents) || {}, (data && data.scheduled) || []); },
+        __test_setState:   function(data) { render((data && data.agents) || {}); },
         __test_render:     render,
         __test_getEntries: function() { return entries; },
         __test_getCfg:     function() { return cfg; },

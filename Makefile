@@ -43,6 +43,7 @@ gnome:
 server: server-restart
 
 server-restart:
+	cd server && npm run build
 	systemctl --user restart claude-state-server
 	@echo "server restarted (status: $$(systemctl --user is-active claude-state-server))"
 

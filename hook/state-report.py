@@ -246,6 +246,31 @@ def find_claude_pid():
     return parent
 
 
+def describe_activity(tool_name, tool_input):
+    """Return a short human-readable description of a tool call for the activity log."""
+    if not tool_input:
+        tool_input = {}
+    if tool_name == "Bash":
+        cmd = (tool_input.get("command") or "").strip().replace("\n", " ")
+        return ("Bash: " + cmd[:50]) if cmd else "Bash"
+    if tool_name in ("Edit", "MultiEdit"):
+        fp = tool_input.get("file_path") or ""
+        base = fp.rstrip("/").split("/")[-1] if fp else ""
+        return ("Edit: " + base) if base else "Edit"
+    if tool_name == "Write":
+        fp = tool_input.get("file_path") or ""
+        base = fp.rstrip("/").split("/")[-1] if fp else ""
+        return ("Write: " + base) if base else "Write"
+    if tool_name == "Read":
+        fp = tool_input.get("file_path") or ""
+        base = fp.rstrip("/").split("/")[-1] if fp else ""
+        return ("Read: " + base) if base else "Read"
+    if tool_name == "Agent":
+        name = tool_input.get("agent_name") or tool_input.get("description") or ""
+        return ("Agent: " + name) if name else "Agent"
+    return tool_name or "?"
+
+
 def main():
     try:
         hook = json.loads(sys.stdin.read())
@@ -273,6 +298,28 @@ def main():
         "project_root": find_project_root(cwd),
         "tty":          get_tty(claude_pid),
     }
+
+    # agent_id / agent_type — present when running as a subagent
+    agent_id   = hook.get("agent_id", "")
+    agent_type = hook.get("agent_type", "")
+    if agent_id:
+        payload["agent_id"]   = agent_id
+    if agent_type:
+        payload["agent_type"] = agent_type
+
+    if event == "UserPromptSubmit":
+        prompt = hook.get("prompt", "")
+        if prompt:
+            payload["prompt"] = prompt[:500]
+
+    if event == "PreToolUse":
+        tool_input = hook.get("tool_input") or {}
+        payload["activity_item"] = describe_activity(tool_name, tool_input)
+        # Capture todo list snapshot when TodoWrite is about to run
+        if tool_name == "TodoWrite":
+            todos = tool_input.get("todos")
+            if isinstance(todos, list):
+                payload["todos"] = todos
 
     if event in ("SessionStart", "UserPromptSubmit"):
         tab = f"cc-{session_id[:8]}" if session_id else ""

@@ -1,6 +1,13 @@
 import { execSync } from "child_process";
 import * as fs from "fs";
 
+export interface Todo {
+  id: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  priority: "high" | "medium" | "low";
+}
+
 export interface Agent {
   pid: number;
   cwd: string;
@@ -18,6 +25,11 @@ export interface Agent {
   project_root: string;
   ai_title: string;
   ghostty_tab_index?: number | null;
+  prompt: string;
+  activity: string[];
+  todos: Todo[];
+  agent_id: string;
+  agent_type: string;
 }
 
 export type AgentsDict = Record<string, Agent>;
@@ -98,6 +110,35 @@ export class AgentStore {
     const incomingWindowId = String(data["window_id"] ?? "");
     const windowId = incomingWindowId || existing.window_id || "";
 
+    // prompt: set on UserPromptSubmit, preserved otherwise
+    const incomingPrompt = data["prompt"] != null ? String(data["prompt"]) : null;
+    const prompt = hookEvent === "UserPromptSubmit" && incomingPrompt !== null
+      ? incomingPrompt
+      : (existing.prompt ?? "");
+
+    // activity: reset on UserPromptSubmit, append activity_item otherwise (cap at 3)
+    let activity: string[];
+    if (hookEvent === "UserPromptSubmit") {
+      activity = [];
+    } else {
+      activity = existing.activity ? [...existing.activity] : [];
+      const activityItem = data["activity_item"] != null ? String(data["activity_item"]) : null;
+      if (activityItem) {
+        activity.push(activityItem);
+        if (activity.length > 3) activity = activity.slice(-3);
+      }
+    }
+
+    // todos: replace when provided, preserve otherwise
+    const incomingTodos = Array.isArray(data["todos"]) ? (data["todos"] as Todo[]) : null;
+    const todos: Todo[] = incomingTodos !== null ? incomingTodos : (existing.todos ?? []);
+
+    // agent_id / agent_type: set once and preserve
+    const incomingAgentId = data["agent_id"] != null ? String(data["agent_id"]) : "";
+    const incomingAgentType = data["agent_type"] != null ? String(data["agent_type"]) : "";
+    const agent_id = incomingAgentId || existing.agent_id || "";
+    const agent_type = incomingAgentType || existing.agent_type || "";
+
     this.agents[pid] = {
       pid: parseInt(pid, 10),
       cwd: String(data["cwd"] ?? existing.cwd ?? ""),
@@ -115,6 +156,11 @@ export class AgentStore {
       project_root: String(data["project_root"] ?? existing.project_root ?? ""),
       // ai_title is set by the poller, never overwritten from hook
       ai_title: existing.ai_title ?? "",
+      prompt,
+      activity,
+      todos,
+      agent_id,
+      agent_type,
     };
 
     this.notify();

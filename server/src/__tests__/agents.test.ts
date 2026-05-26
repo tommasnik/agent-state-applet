@@ -218,4 +218,131 @@ describe("AgentStore", () => {
     // Original store should not be affected
     expect(store.get("1234")?.state).toBe("working");
   });
+
+  // ---------------------------------------------------------------------------
+  // prompt
+  // ---------------------------------------------------------------------------
+
+  test("prompt is empty string on new agent", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit" });
+    expect(store.get("1234")?.prompt).toBe("");
+  });
+
+  test("prompt is set when provided on UserPromptSubmit", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit", prompt: "fix the auth bug" });
+    expect(store.get("1234")?.prompt).toBe("fix the auth bug");
+  });
+
+  test("prompt is preserved across other events", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit", prompt: "fix the auth bug" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", tool_name: "Bash" });
+    expect(store.get("1234")?.prompt).toBe("fix the auth bug");
+  });
+
+  test("prompt is updated when new UserPromptSubmit arrives", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit", prompt: "first prompt" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit", prompt: "second prompt" });
+    expect(store.get("1234")?.prompt).toBe("second prompt");
+  });
+
+  // ---------------------------------------------------------------------------
+  // activity
+  // ---------------------------------------------------------------------------
+
+  test("activity is empty array on new agent", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit" });
+    expect(store.get("1234")?.activity).toEqual([]);
+  });
+
+  test("activity_item is appended to activity list", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", activity_item: "Bash: git status" });
+    expect(store.get("1234")?.activity).toEqual(["Bash: git status"]);
+  });
+
+  test("activity accumulates multiple items", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", activity_item: "Bash: git diff" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", activity_item: "Read: foo.ts" });
+    expect(store.get("1234")?.activity).toEqual(["Bash: git diff", "Read: foo.ts"]);
+  });
+
+  test("activity is capped at 3 items, oldest dropped", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", activity_item: "Bash: git diff" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", activity_item: "Read: foo.ts" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", activity_item: "Edit: bar.ts" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", activity_item: "Write: baz.ts" });
+    expect(store.get("1234")?.activity).toEqual(["Read: foo.ts", "Edit: bar.ts", "Write: baz.ts"]);
+  });
+
+  test("activity is preserved across events without activity_item", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", activity_item: "Bash: ls" });
+    store.upsert({ pid: 1234, state: "done", hook_event: "Stop" });
+    expect(store.get("1234")?.activity).toEqual(["Bash: ls"]);
+  });
+
+  test("activity is reset on new UserPromptSubmit", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", activity_item: "Bash: ls" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit", prompt: "new task" });
+    expect(store.get("1234")?.activity).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // todos
+  // ---------------------------------------------------------------------------
+
+  test("todos is empty array on new agent", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit" });
+    expect(store.get("1234")?.todos).toEqual([]);
+  });
+
+  test("todos are replaced when provided", () => {
+    store.upsert({ pid: 1234, state: "working", hook_event: "UserPromptSubmit" });
+    const todos = [{ id: "1", content: "Fix bug", status: "pending", priority: "high" }];
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", todos });
+    expect(store.get("1234")?.todos).toEqual(todos);
+  });
+
+  test("todos are preserved when not in payload", () => {
+    const todos = [{ id: "1", content: "Fix bug", status: "pending", priority: "high" }];
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", todos });
+    store.upsert({ pid: 1234, state: "done", hook_event: "Stop" });
+    expect(store.get("1234")?.todos).toEqual(todos);
+  });
+
+  test("todos are replaced wholesale on next TodoWrite", () => {
+    const todos1 = [{ id: "1", content: "Task A", status: "pending", priority: "high" }];
+    const todos2 = [
+      { id: "1", content: "Task A", status: "completed", priority: "high" },
+      { id: "2", content: "Task B", status: "in_progress", priority: "medium" },
+    ];
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", todos: todos1 });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse", todos: todos2 });
+    expect(store.get("1234")?.todos).toEqual(todos2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // agent_id / agent_type
+  // ---------------------------------------------------------------------------
+
+  test("agent_id and agent_type are empty string on new agent", () => {
+    store.upsert({ pid: 1234, state: "initialized", hook_event: "SessionStart" });
+    expect(store.get("1234")?.agent_id).toBe("");
+    expect(store.get("1234")?.agent_type).toBe("");
+  });
+
+  test("agent_id and agent_type are set from payload", () => {
+    store.upsert({ pid: 1234, state: "initialized", hook_event: "SessionStart", agent_id: "abc123", agent_type: "Explore" });
+    expect(store.get("1234")?.agent_id).toBe("abc123");
+    expect(store.get("1234")?.agent_type).toBe("Explore");
+  });
+
+  test("agent_id and agent_type are preserved across events", () => {
+    store.upsert({ pid: 1234, state: "initialized", hook_event: "SessionStart", agent_id: "abc123", agent_type: "Explore" });
+    store.upsert({ pid: 1234, state: "working", hook_event: "PreToolUse" });
+    expect(store.get("1234")?.agent_id).toBe("abc123");
+    expect(store.get("1234")?.agent_type).toBe("Explore");
+  });
 });

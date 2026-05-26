@@ -410,6 +410,167 @@ describe("tooltipText", () => {
         const t = tooltipText({ ...base, started_at: undefined }, NOW);
         assert.ok(t.includes(">-<"));
     });
+
+    // -------------------------------------------------------------------------
+    // prompt
+    // -------------------------------------------------------------------------
+
+    test("shows prompt text when present", () => {
+        const t = tooltipText({ ...base, prompt: "fix the auth bug" }, NOW);
+        assert.ok(t.includes("fix the auth bug"));
+    });
+
+    test("does not show prompt section when prompt is empty", () => {
+        const t = tooltipText({ ...base, prompt: "" }, NOW);
+        assert.ok(!t.includes("&quot;") && !t.includes('"fix'));
+    });
+
+    test("truncates prompt longer than 80 chars and adds ellipsis", () => {
+        const long = "x".repeat(100);
+        const t = tooltipText({ ...base, prompt: long }, NOW);
+        assert.ok(!t.includes(long), "full long string should not appear");
+        assert.ok(t.includes("…"), "ellipsis should appear");
+    });
+
+    test("escapes HTML in prompt", () => {
+        const t = tooltipText({ ...base, prompt: "<script>alert(1)</script>" }, NOW);
+        assert.ok(t.includes("&lt;script&gt;"));
+        assert.ok(!t.includes("<script>"));
+    });
+
+    // -------------------------------------------------------------------------
+    // activity
+    // -------------------------------------------------------------------------
+
+    test("shows activity items when present", () => {
+        const t = tooltipText({ ...base, activity: ["Bash: git diff", "Read: foo.ts"] }, NOW);
+        assert.ok(t.includes("Bash: git diff"));
+        assert.ok(t.includes("Read: foo.ts"));
+    });
+
+    test("does not show activity section when activity is empty", () => {
+        const t = tooltipText({ ...base, activity: [] }, NOW);
+        assert.ok(!t.includes("▶ Bash"));
+    });
+
+    test("does not show activity section when activity is absent", () => {
+        const t = tooltipText({ ...base }, NOW);
+        assert.equal(typeof t, "string"); // no crash
+    });
+
+    test("escapes HTML in activity items", () => {
+        const t = tooltipText({ ...base, activity: ["Edit: <evil>.ts"] }, NOW);
+        assert.ok(t.includes("&lt;evil&gt;"));
+        assert.ok(!t.includes("<evil>"));
+    });
+
+    // -------------------------------------------------------------------------
+    // todos
+    // -------------------------------------------------------------------------
+
+    test("shows todos section when todos present", () => {
+        const todos = [
+            { id: "1", content: "Fix bug", status: "pending", priority: "high" },
+            { id: "2", content: "Write tests", status: "in_progress", priority: "medium" },
+            { id: "3", content: "Review PR", status: "completed", priority: "low" },
+        ];
+        const t = tooltipText({ ...base, todos }, NOW);
+        assert.ok(t.includes("Fix bug"));
+        assert.ok(t.includes("Write tests"));
+        assert.ok(t.includes("Review PR"));
+    });
+
+    test("does not show todos section when todos is empty", () => {
+        const t = tooltipText({ ...base, todos: [] }, NOW);
+        assert.ok(!t.includes("Fix bug"));
+    });
+
+    test("does not show todos section when todos is absent", () => {
+        const t = tooltipText({ ...base }, NOW);
+        assert.equal(typeof t, "string");
+    });
+
+    test("completed todo shows check mark symbol", () => {
+        const todos = [{ id: "1", content: "Done task", status: "completed", priority: "low" }];
+        const t = tooltipText({ ...base, todos }, NOW);
+        assert.ok(t.includes("✓"));
+    });
+
+    test("in_progress todo shows play/arrow symbol", () => {
+        const todos = [{ id: "1", content: "Active task", status: "in_progress", priority: "high" }];
+        const t = tooltipText({ ...base, todos }, NOW);
+        assert.ok(t.includes("▶"));
+    });
+
+    test("pending todo shows dot symbol", () => {
+        const todos = [{ id: "1", content: "Waiting task", status: "pending", priority: "medium" }];
+        const t = tooltipText({ ...base, todos }, NOW);
+        assert.ok(t.includes("·"));
+    });
+
+    test("escapes HTML in todo content", () => {
+        const todos = [{ id: "1", content: "<b>bad</b>", status: "pending", priority: "low" }];
+        const t = tooltipText({ ...base, todos }, NOW);
+        assert.ok(t.includes("&lt;b&gt;bad&lt;/b&gt;"));
+        assert.ok(!t.includes("<b>bad</b>"));
+    });
+
+    // -------------------------------------------------------------------------
+    // subagents (via allAgents dict)
+    // -------------------------------------------------------------------------
+
+    test("shows subagents section when other agents in same project have agent_type", () => {
+        const agents = {
+            "42": { ...base },
+            "99": { ...base, pid: "99", agent_type: "Explore", agent_id: "sub1", state: "working" },
+        };
+        const t = tooltipText(base, NOW, undefined, agents);
+        assert.ok(t.includes("Explore"));
+    });
+
+    test("does not show subagents section when no agents have agent_type", () => {
+        const agents = { "42": { ...base } };
+        const t = tooltipText(base, NOW, undefined, agents);
+        assert.ok(!t.includes("Subagents"));
+    });
+
+    test("does not show subagents section when allAgents not passed", () => {
+        const t = tooltipText(base, NOW);
+        assert.ok(!t.includes("Subagents"));
+    });
+
+    test("does not count the current agent as its own subagent", () => {
+        const agentWithType = { ...base, agent_type: "Plan", agent_id: "abc" };
+        const agents = { "42": agentWithType };
+        const t = tooltipText(agentWithType, NOW, undefined, agents);
+        assert.ok(!t.includes("Subagents"));
+    });
+
+    test("subagent tooltip shows agent_type as badge", () => {
+        const subagent = { ...base, agent_type: "Explore", agent_id: "sub1" };
+        const t = tooltipText(subagent, NOW);
+        assert.ok(t.includes("Explore"));
+    });
+
+    test("shows multiple subagents with their states", () => {
+        const agents = {
+            "42": { ...base },
+            "99": { ...base, pid: "99", agent_type: "Explore", agent_id: "sub1", state: "working" },
+            "88": { ...base, pid: "88", agent_type: "Plan", agent_id: "sub2", state: "done" },
+        };
+        const t = tooltipText(base, NOW, undefined, agents);
+        assert.ok(t.includes("Explore"));
+        assert.ok(t.includes("Plan"));
+    });
+
+    test("only shows subagents from same project_root", () => {
+        const agents = {
+            "42": { ...base, project_root: "/proj/a" },
+            "99": { ...base, pid: "99", project_root: "/proj/b", agent_type: "Explore", agent_id: "sub1" },
+        };
+        const t = tooltipText({ ...base, project_root: "/proj/a" }, NOW, undefined, agents);
+        assert.ok(!t.includes("Explore"));
+    });
 });
 
 // ---------------------------------------------------------------------------
