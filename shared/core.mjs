@@ -583,11 +583,15 @@ export function createIndicator(opts) {
     const box = new St.BoxLayout({ vertical: false });
     box.set_style("padding: 0;");
 
-    // pid (str) → { ball, tooltip, color, state, inBox }
+    // pid (str) → { ball, tooltip, color, state, inBox, iconActor }
     let entries     = {};
     let transient   = [];
     let prevStates  = {};
     let lastAgents  = {};
+
+    // App icon cache: cacheKey → { actor, ts }
+    let iconCache = {};
+    const ICON_TTL_MS = 3600 * 1000;
 
     const TooltipClass = makeAgentTooltipClass(deps, function() { return cfg; }, host);
 
@@ -650,6 +654,7 @@ export function createIndicator(opts) {
                         color: (cfg.colors || STATE_COLOR).initialized,
                         state: "initialized",
                         inBox: false,
+                        iconActor: null,
                     };
                 }
             }
@@ -721,6 +726,38 @@ export function createIndicator(opts) {
                 entry.ball.set_style(ballStyle(agentDesc.color, g.ballW, g.ballH, cfg));
                 entry.color = agentDesc.color;
                 entry.state = agentDesc.state;
+
+                // Remove existing icon child (if any) before re-adding ball
+                if (entry.iconActor) {
+                    try { entry.ball.remove_child(entry.iconActor); } catch (_) {}
+                    entry.iconActor = null;
+                }
+
+                // Add app icon as overlay inside ball widget
+                if (host.getAppIcon) {
+                    let agentData = agents[agentDesc.pid];
+                    let winId = agentData && agentData.window_id;
+                    let cacheKey = winId || ("pid:" + agentDesc.pid);
+                    let cached = iconCache[cacheKey];
+                    let nowMs = Date.now();
+
+                    if (cached && (nowMs - cached.ts) < ICON_TTL_MS) {
+                        try {
+                            entry.ball.add_child(cached.actor);
+                            entry.iconActor = cached.actor;
+                        } catch (_) {}
+                    } else {
+                        let iconActor = host.getAppIcon(winId, agentDesc.pid, g.ballH - 4);
+                        if (iconActor) {
+                            iconCache[cacheKey] = { actor: iconActor, ts: nowMs };
+                            try {
+                                entry.ball.add_child(iconActor);
+                                entry.iconActor = iconActor;
+                            } catch (_) {}
+                        }
+                    }
+                }
+
                 ballsRow.add_child(entry.ball);
                 entry.inBox = true;
 

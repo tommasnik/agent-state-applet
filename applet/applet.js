@@ -18,6 +18,7 @@ const GLib     = imports.gi.GLib;
 const Gio      = imports.gi.Gio;
 const Clutter  = imports.gi.Clutter;
 const Pango    = imports.gi.Pango;
+const Cinnamon = imports.gi.Cinnamon;
 const Mainloop = imports.mainloop;
 const Lang     = imports.lang;
 const Util     = imports.misc.util;
@@ -61,6 +62,38 @@ ClaudeAgentStateApplet.prototype = {
                     return null;
                 },
                 getWindowActors: function() { return global.get_window_actors(); },
+                getAppIcon: function(windowIdHex, pid, size) {
+                    // Returns a Clutter actor (icon texture) or null.
+                    try {
+                        const tracker = Cinnamon.WindowTracker.get_default();
+                        let app = null;
+
+                        // Try window_id first
+                        if (windowIdHex) {
+                            let targetXid = parseInt(windowIdHex, 16);
+                            let actors = global.get_window_actors();
+                            for (let i = 0; i < actors.length; i++) {
+                                let mw = actors[i].get_meta_window && actors[i].get_meta_window();
+                                if (!mw) continue;
+                                let xid = mw.get_xwindow ? mw.get_xwindow() : 0;
+                                if (xid === targetXid) {
+                                    app = tracker.get_window_app(mw);
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Fallback to PID
+                        if (!app && pid) {
+                            app = tracker.get_app_from_pid(parseInt(pid, 10));
+                        }
+
+                        if (!app) return null;
+                        return app.create_icon_texture(size || 20);
+                    } catch (e) {
+                        return null;
+                    }
+                },
             },
             config:  {},   // future: feed from Settings.AppletSettings here
             onClick: function(pid, agent, action) { self._onClick(pid, agent, action); },
