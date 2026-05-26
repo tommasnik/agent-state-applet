@@ -56,7 +56,7 @@ def _is_idea_pid(pid):
         return False
 
 
-def get_window_id_for_pid(target_pid, project_root=None):
+def get_window_id_for_pid(target_pid, project_root=None, tab_name=None):
     """Find the X11 window that owns the terminal containing target_pid.
 
     Walks the process tree upward from target_pid and checks each ancestor
@@ -70,6 +70,17 @@ def get_window_id_for_pid(target_pid, project_root=None):
 
     Falls back to _NET_ACTIVE_WINDOW if wmctrl is unavailable or finds nothing.
     """
+    # Ghostty (and some other terminals) inject WINDOWID into the shell environment.
+    # This is the exact X11 window id — more reliable than wmctrl heuristics.
+    wid_env = os.environ.get("WINDOWID", "").strip()
+    if wid_env:
+        try:
+            xid = int(wid_env)
+            if xid > 0:
+                return hex(xid)
+        except ValueError:
+            pass
+
     display = os.environ.get("DISPLAY", ":0")
     env = {**os.environ, "DISPLAY": display}
 
@@ -107,8 +118,14 @@ def get_window_id_for_pid(target_pid, project_root=None):
                             if title.startswith(proj_name + " ") or title == proj_name:
                                 return win_id
                     return wins[0][0]
-                if first_win is None:
+                if len(wins) > 1 and tab_name:
+                    for win_id, title in wins:
+                        if tab_name in title:
+                            return win_id
+                    # Multiple windows, tab_name given but no match — fall through to active window
+                elif len(wins) == 1 and first_win is None:
                     first_win = wins[0][0]
+                # len(wins) > 1 and no tab_name: skip, fall through to active window
             try:
                 with open(f"/proc/{pid}/status") as f:
                     for line in f:
@@ -258,8 +275,14 @@ def main():
     }
 
     if event in ("SessionStart", "UserPromptSubmit"):
-        wid = get_window_id_for_pid(claude_pid, project_root=payload["project_root"])
         tab = f"cc-{session_id[:8]}" if session_id else ""
+        # On UserPromptSubmit the tab title was set on SessionStart — match by title.
+        # On SessionStart the title isn't set yet — fall through to _NET_ACTIVE_WINDOW.
+        wid = get_window_id_for_pid(
+            claude_pid,
+            project_root=payload["project_root"],
+            tab_name=tab if event == "UserPromptSubmit" else None,
+        )
         payload["window_id"]     = wid
         payload["tab_name"]      = tab
         payload["terminal_type"] = get_terminal_type(claude_pid)

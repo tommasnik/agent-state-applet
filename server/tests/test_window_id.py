@@ -81,6 +81,7 @@ def multi_idea_env(monkeypatch):
     )
     monkeypatch.setattr(state_report, "_is_idea_pid", lambda pid: pid == IDEA_PID)
     monkeypatch.setattr(builtins, "open", _fake_open(PARENT_PIDS))
+    monkeypatch.delenv("WINDOWID", raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +247,7 @@ class TestMainPassesProjectRoot:
 
         received_calls = []
 
-        def fake_get_window_id(pid, project_root=None):
+        def fake_get_window_id(pid, project_root=None, tab_name=None):
             received_calls.append({"pid": pid, "project_root": project_root})
             return "0x05186517"
 
@@ -342,4 +343,234 @@ class TestMainPassesProjectRoot:
         )
         assert payload["window_id"] != "0x051dc506", (
             "Got side-bot-platform window — bug is still present."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Ghostty multi-window bug (2026-05-26)
+#
+# Ghostty runs all windows under a single process.  wmctrl -l -p shows both
+# windows with the same Ghostty PID.  The old code always returned the FIRST
+# window for any non-IDEA PID, so clicking any Ghostty agent focused window 1.
+#
+# Fix: add tab_name parameter to get_window_id_for_pid.
+#   - UserPromptSubmit: pass tab_name="cc-{session_id[:8]}" (set by SessionStart)
+#     → match by window title substring → correct window
+#   - SessionStart: no tab_name → fall through to _NET_ACTIVE_WINDOW
+# ---------------------------------------------------------------------------
+
+WMCTRL_GHOSTTY = (
+    "0x01000001  0 9000   tom-lenovo cc-aaaaaaaa\n"
+    "0x01000002  0 9000   tom-lenovo cc-bbbbbbbb\n"
+)
+GHOSTTY_PID = 9000
+GHOSTTY_CLAUDE1_PID = 100
+GHOSTTY_BASH1_PID = 101
+GHOSTTY_CLAUDE2_PID = 200
+GHOSTTY_BASH2_PID = 201
+GHOSTTY_PARENT_PIDS = {
+    GHOSTTY_CLAUDE1_PID: GHOSTTY_BASH1_PID,
+    GHOSTTY_BASH1_PID: GHOSTTY_PID,
+    GHOSTTY_CLAUDE2_PID: GHOSTTY_BASH2_PID,
+    GHOSTTY_BASH2_PID: GHOSTTY_PID,
+}
+ACTIVE_WINDOW = "0x01000002"
+
+
+@pytest.fixture
+def ghostty_two_windows_env(monkeypatch):
+    """Two Ghostty windows sharing PID 9000; window 2 is the active window."""
+    def _run(cmd, **kw):
+        if "wmctrl" in cmd:
+            r = MagicMock()
+            r.stdout = WMCTRL_GHOSTTY
+            return r
+        if "xprop" in cmd:
+            r = MagicMock()
+            r.stdout = f"_NET_ACTIVE_WINDOW(WINDOW): window id # {ACTIVE_WINDOW}\n"
+            return r
+        raise ValueError(cmd)
+
+    monkeypatch.setattr(subprocess, "run", _run)
+    monkeypatch.setattr(state_report, "_is_idea_pid", lambda pid: False)
+    monkeypatch.setattr(builtins, "open", _fake_open(GHOSTTY_PARENT_PIDS))
+    monkeypatch.delenv("WINDOWID", raising=False)
+
+
+class TestGhosttyMultiWindow:
+    """Two Ghostty windows, same project, same PID in wmctrl."""
+
+    def test_matches_window1_by_tab_name(self, ghostty_two_windows_env):
+        result = state_report.get_window_id_for_pid(
+            GHOSTTY_CLAUDE1_PID, tab_name="cc-aaaaaaaa"
+        )
+        assert result == "0x01000001", f"Expected 0x01000001 (window1), got {result!r}"
+
+    def test_matches_window2_by_tab_name(self, ghostty_two_windows_env):
+        result = state_report.get_window_id_for_pid(
+            GHOSTTY_CLAUDE2_PID, tab_name="cc-bbbbbbbb"
+        )
+        assert result == "0x01000002", f"Expected 0x01000002 (window2), got {result!r}"
+
+    def test_no_tab_name_uses_active_window(self, ghostty_two_windows_env):
+        """SessionStart: no tab_name yet → fall through to _NET_ACTIVE_WINDOW."""
+        result = state_report.get_window_id_for_pid(GHOSTTY_CLAUDE1_PID)
+        assert result == ACTIVE_WINDOW, (
+            f"Expected active window {ACTIVE_WINDOW!r}, got {result!r}. "
+            "Without tab_name, multiple-window Ghostty should use _NET_ACTIVE_WINDOW."
+        )
+
+    def test_unmatched_tab_name_uses_active_window(self, ghostty_two_windows_env):
+        """Unknown tab_name → fall through to _NET_ACTIVE_WINDOW (don't return wrong window)."""
+        result = state_report.get_window_id_for_pid(
+            GHOSTTY_CLAUDE1_PID, tab_name="cc-zzzzzzzz"
+        )
+        assert result == ACTIVE_WINDOW, (
+            f"Expected active window fallback, got {result!r}"
+        )
+
+
+class TestWindowIdEnv:
+    """WINDOWID env var (set by Ghostty) takes priority over wmctrl heuristics.
+
+    Real-world values from 2026-05-26:
+      Session 298112 → WINDOWID=100663300 (0x06000004, window 1)
+      Session 299150 → WINDOWID=100663329 (0x06000021, window 2)
+    Both windows share PID 297813 in wmctrl — wmctrl-based matching fails,
+    but WINDOWID gives the exact correct answer immediately.
+    """
+
+    def test_windowid_env_used_for_ghostty_window1(self, ghostty_two_windows_env, monkeypatch):
+        monkeypatch.setenv("WINDOWID", "100663300")  # decimal → 0x6000004
+        result = state_report.get_window_id_for_pid(GHOSTTY_CLAUDE1_PID)
+        assert result == hex(100663300), f"Expected {hex(100663300)!r}, got {result!r}"
+
+    def test_windowid_env_used_for_ghostty_window2(self, ghostty_two_windows_env, monkeypatch):
+        monkeypatch.setenv("WINDOWID", "100663329")  # decimal → 0x6000021
+        result = state_report.get_window_id_for_pid(GHOSTTY_CLAUDE2_PID)
+        assert result == hex(100663329), f"Expected {hex(100663329)!r}, got {result!r}"
+
+    def test_windowid_zero_ignored(self, ghostty_two_windows_env, monkeypatch):
+        """WINDOWID=0 is invalid; fall through to wmctrl/active-window logic."""
+        monkeypatch.setenv("WINDOWID", "0")
+        result = state_report.get_window_id_for_pid(GHOSTTY_CLAUDE1_PID)
+        assert result != "0x0", "WINDOWID=0 must not be returned"
+        assert result == ACTIVE_WINDOW
+
+    def test_windowid_not_set_falls_through(self, ghostty_two_windows_env, monkeypatch):
+        """Without WINDOWID, falls through to _NET_ACTIVE_WINDOW (fixture has no tab_name)."""
+        monkeypatch.delenv("WINDOWID", raising=False)
+        result = state_report.get_window_id_for_pid(GHOSTTY_CLAUDE1_PID)
+        assert result == ACTIVE_WINDOW
+
+    def test_idea_unaffected_when_windowid_not_set(self, multi_idea_env):
+        """IDEA path unchanged: no WINDOWID in env, project_root matching still works."""
+        result = state_report.get_window_id_for_pid(
+            CLAUDE_PID, project_root="/home/tom/code/agent-state-applet"
+        )
+        assert result == "0x05186517"
+
+
+class TestMainPassesTabName:
+    """main() must pass tab_name to get_window_id_for_pid on UserPromptSubmit."""
+
+    def test_user_prompt_submit_passes_tab_name(self, monkeypatch, tmp_path):
+        import sys
+        import json
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        received_calls = []
+
+        def fake_get_window_id(pid, project_root=None, tab_name=None):
+            received_calls.append({"pid": pid, "project_root": project_root, "tab_name": tab_name})
+            return "0x01000002"
+
+        class Sink(BaseHTTPRequestHandler):
+            payloads = []
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers["Content-Length"]))
+                self.__class__.payloads.append(json.loads(body))
+                self.send_response(200); self.end_headers()
+            def log_message(self, *_): pass
+
+        Sink.payloads = []
+        srv = HTTPServer(("127.0.0.1", 0), Sink)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        monkeypatch.setattr(state_report, "SERVER_URL", f"http://127.0.0.1:{srv.server_address[1]}/agent")
+
+        proj = tmp_path / "my-project"
+        proj.mkdir()
+        (proj / ".git").mkdir()
+        monkeypatch.chdir(proj)
+
+        session_id = "aabbccdd-1234-5678-abcd-aabbccddeeff"
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": session_id,
+            "tool_name": "",
+        })))
+        monkeypatch.setattr(state_report, "find_claude_pid", lambda: GHOSTTY_CLAUDE1_PID)
+        monkeypatch.setattr(state_report, "get_tty", lambda pid: "/dev/pts/0")
+        monkeypatch.setattr(state_report, "get_window_id_for_pid", fake_get_window_id)
+        monkeypatch.setattr(state_report, "get_terminal_type", lambda pid: "ghostty")
+        monkeypatch.setattr(state_report, "set_terminal_title", lambda pid, t: None)
+
+        state_report.main()
+        srv.shutdown()
+
+        assert len(received_calls) == 1
+        call = received_calls[0]
+        expected_tab = f"cc-{session_id[:8]}"
+        assert call["tab_name"] == expected_tab, (
+            f"Expected tab_name={expected_tab!r}, got {call['tab_name']!r}. "
+            "main() must pass tab_name on UserPromptSubmit for Ghostty window matching."
+        )
+
+    def test_session_start_passes_no_tab_name(self, monkeypatch, tmp_path):
+        """On SessionStart, tab title not set yet — pass tab_name=None."""
+        import sys
+        import json
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        received_calls = []
+
+        def fake_get_window_id(pid, project_root=None, tab_name=None):
+            received_calls.append({"tab_name": tab_name})
+            return "0x01000001"
+
+        class Sink(BaseHTTPRequestHandler):
+            payloads = []
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(200); self.end_headers()
+            def log_message(self, *_): pass
+
+        srv = HTTPServer(("127.0.0.1", 0), Sink)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        monkeypatch.setattr(state_report, "SERVER_URL", f"http://127.0.0.1:{srv.server_address[1]}/agent")
+
+        proj = tmp_path / "my-project"
+        proj.mkdir()
+        (proj / ".git").mkdir()
+        monkeypatch.chdir(proj)
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({
+            "hook_event_name": "SessionStart",
+            "session_id": "aabbccdd-1234-5678-abcd-aabbccddeeff",
+            "tool_name": "",
+        })))
+        monkeypatch.setattr(state_report, "find_claude_pid", lambda: GHOSTTY_CLAUDE1_PID)
+        monkeypatch.setattr(state_report, "get_tty", lambda pid: "/dev/pts/0")
+        monkeypatch.setattr(state_report, "get_window_id_for_pid", fake_get_window_id)
+        monkeypatch.setattr(state_report, "get_terminal_type", lambda pid: "ghostty")
+        monkeypatch.setattr(state_report, "set_terminal_title", lambda pid, t: None)
+
+        state_report.main()
+        srv.shutdown()
+
+        assert len(received_calls) == 1
+        assert received_calls[0]["tab_name"] is None, (
+            f"SessionStart must pass tab_name=None, got {received_calls[0]['tab_name']!r}"
         )

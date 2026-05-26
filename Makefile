@@ -2,11 +2,15 @@ APPLET_UUID    := claude-agent-state@tommasnik
 APPLET_DEST    := $(HOME)/.local/share/cinnamon/applets/$(APPLET_UUID)
 GNOME_EXT_DEST := $(HOME)/.local/share/gnome-shell/extensions/$(APPLET_UUID)
 
-.PHONY: reload applet gnome server server-restart server-logs test test-server test-render test-ui test-click \
+.PHONY: reload hook applet gnome server server-restart server-logs test test-server test-render test-ui test-click \
         install install-gnome install-cinnamon smoke logs-check check
 
-# Cinnamon dev reload
-reload: applet server
+# Cinnamon dev reload — rebuilds and redeploys all components
+reload: hook applet server
+
+hook:
+	cp hook/state-report.py $(HOME)/.claude/hooks/state-report.py
+	@echo "hook copied"
 
 # Generate the Cinnamon-compatible version of shared/core.mjs by stripping
 # `export` keywords (Cinnamon's GJS has no ESM module resolver). The result
@@ -98,13 +102,16 @@ logs-check:
 	  echo "✓ no recent errors for $(APPLET_UUID)"; \
 	fi
 
-# Composite: applet build + JS syntax check + tests
+# Composite: applet build + JS syntax check + tests + deployment sync check
 check: applet/core.js
 	@node --check applet/core.js && echo "✓ applet/core.js syntax OK"
 	@node --check applet/applet.js && echo "✓ applet/applet.js syntax OK" || true
 	@node --check gnome-extension/extension.js 2>/dev/null && echo "✓ extension.js syntax OK" || \
 	  echo "(extension.js uses ESM import — skip node --check)"
 	@$(MAKE) test-render test-ui
+	@diff hook/state-report.py $(HOME)/.claude/hooks/state-report.py >/dev/null 2>&1 \
+	  && echo "✓ hook in sync" \
+	  || echo "✗ hook out of sync — run: make hook"
 
 # ---------------------------------------------------------------------------
 # Install

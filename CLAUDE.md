@@ -58,7 +58,7 @@ POST /agent payload fields:
 
 ## How to apply changes
 
-**Hook** (`state-report.py`) — no restart, executes fresh each time.
+**Hook** (`state-report.py`) — `make hook` (copies to `~/.claude/hooks/`). Executes fresh each time, no daemon restart needed. **Do not forget this step** — the file in the repo and `~/.claude/hooks/` are separate copies.
 
 **Server** (`claude_state_server.py`) — `systemctl --user restart claude-state-server`
 
@@ -70,6 +70,7 @@ Note: `dbus-send` does NOT work for this — use `gdbus call`.
 
 ## Common tasks
 
+- **Reload everything after changes**: `make reload` (copies hook + rebuilds applet + restarts server).
 - **Add a new agent state/color**: add to `STATE_COLOR` and `STATE_LABEL` in `applet.js`, add mapping in `HOOK_STATE` in `state-report.py`.
 - **Change grouping key**: edit `_update()` in `applet.js` (the `gkey` line) and the `_projectName()` method.
 - **Add a new server endpoint**: add `elif self.path == "/new-endpoint":` in `Handler.do_POST` or `do_GET`.
