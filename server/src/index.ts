@@ -1,6 +1,4 @@
-import express from "express";
 import * as http from "http";
-import * as path from "path";
 import * as fs from "fs";
 
 import { AgentStore, pidAlive, getOpenXids, parseXid } from "./agents";
@@ -16,16 +14,9 @@ import {
   ScheduledEntry,
 } from "./stateFile";
 import { createWsServer, broadcastState } from "./ws";
-import { createAgentRouter } from "./routes/agent";
-import { createFocusRouter } from "./routes/focus";
-import { createStatusRouter } from "./routes/status";
-import { createReviewsRouter } from "./routes/reviews";
-import configRouter from "./routes/config";
-import projectsRouter from "./routes/projects";
-import schedulesRouter from "./routes/schedules";
-import promptsRouter from "./routes/prompts";
 import { initDb, getDb } from "./db";
 import { schedulerInit } from "./scheduler";
+import { buildApp } from "./app";
 
 const HOST = "127.0.0.1";
 const PORT = 7855;
@@ -58,29 +49,7 @@ function writeState(): void {
 }
 
 // --- Express app ---
-const app = express();
-app.use(express.json());
-
-// Serve React UI from ../ui/dist/ if it exists
-const uiDistPath = path.resolve(__dirname, "../../ui/dist");
-if (fs.existsSync(uiDistPath)) {
-  app.use(express.static(uiDistPath));
-  app.get("/", (_req, res) => {
-    res.sendFile(path.join(uiDistPath, "index.html"));
-  });
-  app.get("/assets/*", (_req, res, next) => next());
-}
-
-// Routes
-app.use("/agent", createAgentRouter(store, writeState));
-app.use("/focus", createFocusRouter(store, writeState));
-app.use("/api/focus", createFocusRouter(store, writeState));
-app.use("/status", createStatusRouter(store));
-app.use("/reviews", createReviewsRouter(pendingReviews, writeState));
-app.use("/api", configRouter);
-app.use("/api", projectsRouter);
-app.use("/api", schedulesRouter);
-app.use("/api", promptsRouter);
+const app = buildApp(store, writeState, pendingReviews);
 
 // Notify WebSocket clients on any state change
 const httpServer = http.createServer(app);
