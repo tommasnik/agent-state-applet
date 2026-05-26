@@ -34,7 +34,7 @@ export function runInteractive(
   const display = process.env.DISPLAY || ":0";
   const child = spawn(
     "ghostty",
-    [`--working-directory=${projectPath}`, "-e", "bash", "-lic", `cd '${escapedPath}' && exec claude '${escapedPrompt}'`],
+    [`--working-directory=${projectPath}`, "-e", "bash", "-lic", `cd '${escapedPath}' && claude '${escapedPrompt}' ; exec bash`],
     { detached: true, stdio: "ignore", env: { ...process.env, DISPLAY: display } }
   );
   child.on("error", (err) => {
