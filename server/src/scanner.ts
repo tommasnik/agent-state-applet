@@ -1,6 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
 
+export interface SubProject {
+  name: string;
+  path: string;
+  hasBacklog: true;
+}
+
 export interface Project {
   name: string;
   path: string;
@@ -8,6 +14,7 @@ export interface Project {
   hasMcpJson: boolean;
   hasSkills: boolean;
   agentYaml?: string;
+  subProjects: SubProject[];
 }
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", ".venv", "dist", "__pycache__"]);
@@ -38,6 +45,43 @@ function readAgentYaml(dirPath: string): string | undefined {
   }
 }
 
+export function findSubProjects(projectPath: string, maxDepth = 3): SubProject[] {
+  const results: SubProject[] = [];
+
+  function walk(dir: string, depth: number): void {
+    if (depth > maxDepth) return;
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (IGNORED_DIRS.has(entry)) continue;
+      const full = path.join(dir, entry);
+      try {
+        if (!fs.statSync(full).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      // A sub-project is a dir that contains backlog/
+      if (fs.existsSync(path.join(full, "backlog"))) {
+        try {
+          if (fs.statSync(path.join(full, "backlog")).isDirectory()) {
+            results.push({ name: path.basename(full), path: full, hasBacklog: true });
+            // Don't recurse into a sub-project
+            continue;
+          }
+        } catch {/* ignore */}
+      }
+      walk(full, depth + 1);
+    }
+  }
+
+  walk(projectPath, 1);
+  return results;
+}
+
 function scanDir(dirPath: string): Project | null {
   try {
     const stat = fs.statSync(dirPath);
@@ -54,6 +98,7 @@ function scanDir(dirPath: string): Project | null {
     fs.existsSync(path.join(dirPath, "mcp.json"));
   const hasSkills = fs.existsSync(path.join(dirPath, ".claude", "skills"));
   const agentYaml = readAgentYaml(dirPath);
+  const subProjects = findSubProjects(dirPath);
 
   return {
     name: path.basename(dirPath),
@@ -62,6 +107,7 @@ function scanDir(dirPath: string): Project | null {
     hasMcpJson,
     hasSkills,
     agentYaml,
+    subProjects,
   };
 }
 

@@ -53,6 +53,27 @@ export function runInteractive(
 }
 
 /**
+ * Launch an interactive Ghostty terminal without recording a DB run.
+ * Used for ad-hoc implement actions from the UI (no schedule context).
+ * Returns 0 as a placeholder run ID.
+ */
+export function runInteractiveAnon(projectPath: string, prompt: string): number {
+  const escapedPath = projectPath.replace(/'/g, "'\\''");
+  const escapedPrompt = prompt.replace(/'/g, "'\\''");
+  const display = process.env.DISPLAY || ":0";
+  const child = spawn(
+    "ghostty",
+    [`--working-directory=${projectPath}`, "-e", "bash", "-lic", `cd '${escapedPath}' && claude '${escapedPrompt}' ; exec bash`],
+    { detached: true, stdio: "ignore", env: { ...process.env, DISPLAY: display } }
+  );
+  child.on("error", (err) => {
+    console.error(`[runner] ghostty launch failed: ${err.message}`);
+  });
+  child.unref();
+  return 0;
+}
+
+/**
  * Run Claude Code headlessly (--print mode), streaming stdout/stderr over WebSocket.
  */
 export function runHeadless(

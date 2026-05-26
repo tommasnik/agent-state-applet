@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
 import { useAgentsStore, stateColor, stateLabel } from "../store/agents";
 import type { Agent } from "../store/agents";
 
@@ -6,12 +7,19 @@ import type { Agent } from "../store/agents";
 // Types
 // ----------------------------------------------------------------
 
+interface SubProject {
+  name: string;
+  path: string;
+  hasBacklog: true;
+}
+
 interface Project {
   name: string;
   path: string;
   hasClaudeMd: boolean;
   hasMcpJson: boolean;
   hasSkills: boolean;
+  subProjects: SubProject[];
 }
 
 interface Skill {
@@ -33,13 +41,27 @@ interface PipelineJob {
 }
 
 interface PipelineData {
-  provider: "gitlab";
+  provider: "gitlab" | "github";
   status: string;
   ref: string;
   web_url: string;
   started_at: string | null;
   duration: number | null;
   jobs: PipelineJob[];
+}
+
+interface BacklogFile {
+  name: string;
+  content: string;
+}
+
+interface ParsedTask {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  fileName: string;
+  content: string;
 }
 
 // ----------------------------------------------------------------
@@ -104,6 +126,200 @@ function sessionTitle(agent: Agent): string {
 
 const NEEDS_INPUT_STATES = new Set(["asking_user", "waiting_for_approval"]);
 const WORKING_STATES = new Set(["working", "initialized"]);
+
+// ----------------------------------------------------------------
+// Simple inline YAML frontmatter parser
+// ----------------------------------------------------------------
+
+function parseFrontmatter(content: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!content.startsWith("---")) return result;
+  const end = content.indexOf("\n---", 3);
+  if (end === -1) return result;
+  const block = content.slice(3, end);
+  for (const line of block.split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon === -1) continue;
+    const key = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim().replace(/^["']|["']$/g, "");
+    if (key) result[key] = value;
+  }
+  return result;
+}
+
+function parseBacklogFiles(files: BacklogFile[]): ParsedTask[] {
+  return files
+    .map((f) => {
+      const fm = parseFrontmatter(f.content);
+      const status = (fm.status ?? "").toLowerCase();
+      const priority = fm.priority ?? "";
+      const idMatch = f.name.match(/TASK-\d+/i);
+      const id = idMatch ? idMatch[0].toUpperCase() : f.name.replace(/\.md$/, "");
+      const title = fm.title ?? f.name.replace(/\.md$/, "").replace(/^task-\d+\s*-?\s*/i, "");
+      return { id, title, status, priority, fileName: f.name, content: f.content };
+    })
+    .filter((t) => !t.status.includes("done") && !t.status.includes("archive"));
+}
+
+// ----------------------------------------------------------------
+// TaskDetailModal
+// ----------------------------------------------------------------
+
+interface TaskDetailModalProps {
+  task: ParsedTask;
+  subProjectPath: string;
+  onClose: () => void;
+}
+
+function TaskDetailModal({ task, subProjectPath, onClose }: TaskDetailModalProps) {
+  const [running, setRunning] = useState(false);
+
+  const handleBackdrop = useCallback(
+    (e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); },
+    [onClose]
+  );
+
+  const handleImplement = useCallback(async () => {
+    setRunning(true);
+    try {
+      await fetch(`/api/projects/${encodePath(subProjectPath)}/implement/${task.id}`, {
+        method: "POST",
+      });
+      onClose();
+    } catch {/* ignore */} finally {
+      setRunning(false);
+    }
+  }, [task.id, subProjectPath, onClose]);
+
+  return (
+    <div className="modal-backdrop" onClick={handleBackdrop}>
+      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-title">
+            <span className="task-modal-id">{task.id}</span>
+            {" · "}
+            {task.title}
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className="modal-body modal-body-md">
+          <ReactMarkdown>{task.content}</ReactMarkdown>
+        </div>
+        <div className="modal-foot">
+          <button className="btn" onClick={onClose}>Zrušit</button>
+          <div style={{ flex: 1 }} />
+          <button className="btn btn-primary" onClick={handleImplement} disabled={running}>
+            {running ? "Spouštím…" : "Spustit implementaci →"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------
+// SubProjectDetail
+// ----------------------------------------------------------------
+
+interface SubProjectDetailProps {
+  subProject: SubProject;
+}
+
+function SubProjectDetail({ subProject }: SubProjectDetailProps) {
+  const encoded = encodePath(subProject.path);
+  const [tasks, setTasks] = useState<ParsedTask[] | null>(null);
+  const [selectedTask, setSelectedTask] = useState<ParsedTask | null>(null);
+
+  useEffect(() => {
+    setTasks(null);
+    fetch(`/api/projects/${encoded}/backlog`)
+      .then((r) => r.json())
+      .then((data: { files: BacklogFile[] }) => setTasks(parseBacklogFiles(data.files)))
+      .catch(() => setTasks([]));
+  }, [encoded]);
+
+  const handleImplementAll = useCallback(() => {
+    fetch(`/api/projects/${encoded}/implement-all`, { method: "POST" }).catch(() => {/* ignore */});
+  }, [encoded]);
+
+  const handleImplementNext = useCallback(() => {
+    fetch(`/api/projects/${encoded}/implement-next`, { method: "POST" }).catch(() => {/* ignore */});
+  }, [encoded]);
+
+  return (
+    <div className="pd-container">
+      <header className="pd-head">
+        <div className="pd-mark pd-mark-backlog" />
+        <div className="pd-meta">
+          <h2 className="pd-name">{subProject.name}</h2>
+          <div className="pd-path"><code>{subProject.path}</code></div>
+          <div className="pd-flags">
+            <span className="pd-flag">Backlog</span>
+          </div>
+        </div>
+        <div className="sp-actions">
+          <button className="btn" onClick={handleImplementNext} title="Implementuj první To Do task">
+            Next task
+          </button>
+          <button className="btn btn-primary" onClick={handleImplementAll} title="Implementuj všechny tasky">
+            Implementuj vše
+          </button>
+        </div>
+      </header>
+
+      <section className="pd-block">
+        <div className="pd-block-head">
+          Open tasks
+          {tasks !== null && <span className="section-count">{tasks.length}</span>}
+        </div>
+
+        {tasks === null ? (
+          <div className="empty-state">Loading…</div>
+        ) : tasks.length === 0 ? (
+          <div className="empty-state">No open tasks found.</div>
+        ) : (
+          <div className="sp-task-table">
+            <div className="sp-task-header">
+              <span className="sp-task-col sp-task-col-id">ID</span>
+              <span className="sp-task-col sp-task-col-title">Title</span>
+              <span className="sp-task-col sp-task-col-prio">Priority</span>
+              <span className="sp-task-col sp-task-col-status">Status</span>
+              <span className="sp-task-col sp-task-col-action" />
+            </div>
+            {tasks.map((t) => (
+              <div
+                key={t.fileName}
+                className="sp-task-row"
+                onClick={() => setSelectedTask(t)}
+              >
+                <span className="sp-task-col sp-task-col-id">{t.id}</span>
+                <span className="sp-task-col sp-task-col-title">{t.title}</span>
+                <span className="sp-task-col sp-task-col-prio">{t.priority || "—"}</span>
+                <span className="sp-task-col sp-task-col-status">{t.status || "—"}</span>
+                <span className="sp-task-col sp-task-col-action">
+                  <button
+                    className="btn btn-xs"
+                    onClick={(e) => { e.stopPropagation(); setSelectedTask(t); }}
+                  >
+                    Run
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {selectedTask && (
+        <TaskDetailModal
+          task={selectedTask}
+          subProjectPath={subProject.path}
+          onClose={() => setSelectedTask(null)}
+        />
+      )}
+    </div>
+  );
+}
 
 // ----------------------------------------------------------------
 // AgentTerminalModal (inline, matches AgentsPage version)
@@ -458,6 +674,7 @@ export function ProjectsPage() {
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedSubPath, setSelectedSubPath] = useState<string | null>(null);
   const [openAgent, setOpenAgent] = useState<Agent | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -574,6 +791,7 @@ export function ProjectsPage() {
   }, [config, newRoot, loadProjects]);
 
   const selected = projects.find((p) => p.path === selectedPath) ?? null;
+  const selectedSub = selected?.subProjects?.find((sp) => sp.path === selectedSubPath) ?? null;
 
   // Group projects by parent directory
   const groupedProjects = useMemo(() => {
@@ -678,33 +896,45 @@ export function ProjectsPage() {
                 {!collapsed && groupProjects.map((p) => {
                   const counts = projectCounts(p.path);
                   return (
-                    <button
-                      key={p.path}
-                      className={`pm-row ${p.path === selectedPath ? "active" : ""}`}
-                      onClick={() => setSelectedPath(p.path)}
-                    >
-                      <span className="pm-mark" style={{ background: projectColor(p.path) }} />
-                      <span className="pm-name">{p.name}</span>
-                      <span className="pm-counts">
-                        {counts.needs > 0 && (
-                          <span className="pm-pip pm-pip-needs" title="Needs input">{counts.needs}</span>
-                        )}
-                        {counts.working > 0 && (
-                          <span className="pm-pip pm-pip-working" title="Working">{counts.working}</span>
-                        )}
-                        {(() => {
-                          const pip = sidebarPipelines.get(p.path);
-                          if (!pip) return null;
-                          return (
-                            <span
-                              className="pm-pip pm-pip-pipeline"
-                              style={{ background: pipelineColor(pip.status) }}
-                              title={`Pipeline: ${pip.status}`}
-                            />
-                          );
-                        })()}
-                      </span>
-                    </button>
+                    <div key={p.path}>
+                      <button
+                        className={`pm-row ${p.path === selectedPath && !selectedSubPath ? "active" : ""}`}
+                        onClick={() => { setSelectedPath(p.path); setSelectedSubPath(null); }}
+                      >
+                        <span className="pm-mark" style={{ background: projectColor(p.path) }} />
+                        <span className="pm-name">{p.name}</span>
+                        <span className="pm-counts">
+                          {counts.needs > 0 && (
+                            <span className="pm-pip pm-pip-needs" title="Needs input">{counts.needs}</span>
+                          )}
+                          {counts.working > 0 && (
+                            <span className="pm-pip pm-pip-working" title="Working">{counts.working}</span>
+                          )}
+                          {(() => {
+                            const pip = sidebarPipelines.get(p.path);
+                            if (!pip) return null;
+                            return (
+                              <span
+                                className="pm-pip pm-pip-pipeline"
+                                style={{ background: pipelineColor(pip.status) }}
+                                title={`Pipeline: ${pip.status}`}
+                              />
+                            );
+                          })()}
+                        </span>
+                      </button>
+                      {p.subProjects?.map((sp) => (
+                        <button
+                          key={sp.path}
+                          className={`pm-row pm-row-sub ${selectedSubPath === sp.path ? "active" : ""}`}
+                          onClick={() => { setSelectedPath(p.path); setSelectedSubPath(sp.path); }}
+                        >
+                          <span className="pm-sub-indent" />
+                          <span className="pm-name">{sp.name}</span>
+                          <span className="pm-pip pm-pip-backlog">BL</span>
+                        </button>
+                      ))}
+                    </div>
                   );
                 })}
               </div>
@@ -718,7 +948,12 @@ export function ProjectsPage() {
 
       {/* Right panel */}
       <section className="projects-detail">
-        {selected ? (
+        {selectedSub ? (
+          <SubProjectDetail
+            key={selectedSub.path}
+            subProject={selectedSub}
+          />
+        ) : selected ? (
           <ProjectDetail
             key={selected.path}
             project={selected}
