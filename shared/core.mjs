@@ -592,9 +592,6 @@ export function createIndicator(opts) {
     let prevStates  = {};
     let lastAgents  = {};
 
-    // App icon cache: cacheKey → { actor, ts }
-    let iconCache = {};
-    const ICON_TTL_MS = 3600 * 1000;
 
     const TooltipClass = makeAgentTooltipClass(deps, function() { return cfg; }, host);
 
@@ -740,41 +737,22 @@ export function createIndicator(opts) {
 
                 // Add app icon as overlay inside tile widget.
                 // host.resolveAppIcon is optional — skipped when the adapter doesn't
-                // provide it (e.g. test env without GJS). Icons are cached for
-                // ICON_TTL_MS (1 h) keyed by window_id (or "pid:<pid>" as fallback).
+                // provide it (e.g. test env without GJS).
                 if (host.resolveAppIcon) {
                     let agentData = agents[agentDesc.pid];
                     let winId = agentData && agentData.window_id;
-                    let cacheKey = winId || ("pid:" + agentDesc.pid);
-                    let cached = iconCache[cacheKey];
-                    let nowMs = Date.now();
-
-                    function centerActor(actor) {
+                    let iconActor = host.resolveAppIcon(winId, agentDesc.pid, g.tileH - 4);
+                    if (iconActor) {
                         try {
                             if (Clutter && Clutter.ActorAlign) {
-                                if (actor.set_x_align) actor.set_x_align(Clutter.ActorAlign.CENTER);
-                                if (actor.set_y_align) actor.set_y_align(Clutter.ActorAlign.CENTER);
+                                if (iconActor.set_x_align) iconActor.set_x_align(Clutter.ActorAlign.CENTER);
+                                if (iconActor.set_y_align) iconActor.set_y_align(Clutter.ActorAlign.CENTER);
                             }
-                            if (actor.set_x_expand) actor.set_x_expand(true);
-                            if (actor.set_y_expand) actor.set_y_expand(true);
+                            if (iconActor.set_x_expand) iconActor.set_x_expand(true);
+                            if (iconActor.set_y_expand) iconActor.set_y_expand(true);
+                            entry.tile.add_child(iconActor);
+                            entry.iconActor = iconActor;
                         } catch (_) {}
-                    }
-                    if (cached && (nowMs - cached.ts) < ICON_TTL_MS) {
-                        try {
-                            centerActor(cached.actor);
-                            entry.tile.add_child(cached.actor);
-                            entry.iconActor = cached.actor;
-                        } catch (_) {}
-                    } else {
-                        let iconActor = host.resolveAppIcon(winId, agentDesc.pid, g.tileH - 4);
-                        if (iconActor) {
-                            iconCache[cacheKey] = { actor: iconActor, ts: nowMs };
-                            try {
-                                centerActor(iconActor);
-                                entry.tile.add_child(iconActor);
-                                entry.iconActor = iconActor;
-                            } catch (_) {}
-                        }
                     }
                 }
 
