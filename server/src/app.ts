@@ -9,6 +9,7 @@ import { createStatusRouter } from "./routes/status";
 import { createReviewsRouter } from "./routes/reviews";
 import configRouter from "./routes/config";
 import projectsRouter from "./routes/projects";
+import pipelineRouter from "./routes/pipeline";
 import schedulesRouter from "./routes/schedules";
 import promptsRouter from "./routes/prompts";
 import type { ReviewMeta } from "./stateFile";
@@ -41,6 +42,7 @@ export function buildApp(
   app.use("/reviews", createReviewsRouter(pendingReviews, writeState));
   app.use("/api", configRouter);
   app.use("/api", projectsRouter);
+  app.use("/api", pipelineRouter);
   app.use("/api", schedulesRouter);
   app.use("/api", promptsRouter);
 

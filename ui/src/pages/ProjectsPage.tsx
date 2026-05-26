@@ -23,9 +23,67 @@ interface Config {
   projectRoots: string[];
 }
 
+interface PipelineJob {
+  id: number;
+  name: string;
+  status: string;
+  web_url: string;
+  duration: number | null;
+  started_at: string | null;
+}
+
+interface PipelineData {
+  provider: "gitlab";
+  status: string;
+  ref: string;
+  web_url: string;
+  started_at: string | null;
+  duration: number | null;
+  jobs: PipelineJob[];
+}
+
 // ----------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------
+
+function pipelineColor(status: string): string {
+  switch (status) {
+    case "success": return "#3fb950";
+    case "failed": return "#f85149";
+    case "running": return "#e8c000";
+    case "pending": return "#4a90d9";
+    case "canceled": return "#808080";
+    case "skipped": return "#808080";
+    default: return "#808080";
+  }
+}
+
+function pipelineJobIcon(status: string): string {
+  switch (status) {
+    case "success": return "✓";
+    case "failed": return "✗";
+    case "running": return "⟳";
+    case "pending": return "·";
+    case "canceled": return "—";
+    case "skipped": return "·";
+    default: return "·";
+  }
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null) return "";
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "";
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
 
 function projectColor(projectPath: string): string {
   let hash = 0;
@@ -142,6 +200,9 @@ function ProjectDetail({ project, agents, onOpenAgent }: ProjectDetailProps) {
   // Skills state
   const [skills, setSkills] = useState<Skill[]>([]);
 
+  // Pipeline state
+  const [pipeline, setPipeline] = useState<PipelineData | null | undefined>(undefined);
+
   // Load CLAUDE.md
   useEffect(() => {
     setClaudeMd(null);
@@ -161,6 +222,31 @@ function ProjectDetail({ project, agents, onOpenAgent }: ProjectDetailProps) {
       .then((data: Skill[]) => setSkills(data))
       .catch(() => setSkills([]));
   }, [encoded, project.hasSkills]);
+
+  // Load pipeline with adaptive polling
+  useEffect(() => {
+    setPipeline(undefined);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchPipeline = () => {
+      fetch(`/api/projects/${encoded}/pipeline`)
+        .then((r) => r.json())
+        .then((data: PipelineData | null) => {
+          setPipeline(data);
+          // Poll faster for active pipelines
+          const isActive = data && (data.status === "running" || data.status === "pending");
+          const interval = isActive ? 5000 : 30000;
+          timer = setTimeout(fetchPipeline, interval);
+        })
+        .catch(() => {
+          setPipeline(null);
+          timer = setTimeout(fetchPipeline, 30000);
+        });
+    };
+
+    fetchPipeline();
+    return () => { if (timer !== null) clearTimeout(timer); };
+  }, [encoded]);
 
   const handleEditStart = useCallback(() => {
     setEditContent(claudeMd ?? "");
@@ -217,6 +303,76 @@ function ProjectDetail({ project, agents, onOpenAgent }: ProjectDetailProps) {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Pipeline */}
+      {pipeline !== undefined && (
+        <section className="pd-block pipeline-section">
+          <div className="pd-block-head">
+            Pipeline
+            {pipeline && (
+              <span
+                className="pm-pip pm-pip-pipeline"
+                style={{ background: pipelineColor(pipeline.status), color: "#fff" }}
+              >
+                {pipeline.status}
+              </span>
+            )}
+          </div>
+          {pipeline === null ? null : pipeline === undefined ? (
+            <div className="empty-state">Loading…</div>
+          ) : (
+            <>
+              <div className="pipeline-meta">
+                <span className="pipeline-branch">
+                  <code>{pipeline.ref}</code>
+                </span>
+                {pipeline.started_at && (
+                  <span className="pipeline-time">{timeAgo(pipeline.started_at)}</span>
+                )}
+                {pipeline.duration !== null && (
+                  <span className="pipeline-dur">{formatDuration(pipeline.duration)}</span>
+                )}
+                {pipeline.web_url && (
+                  <a
+                    href={pipeline.web_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="pipeline-link"
+                  >
+                    Open in GitLab
+                  </a>
+                )}
+              </div>
+              {pipeline.jobs.length > 0 && (
+                <div className="pipeline-jobs">
+                  {pipeline.jobs.map((job) => (
+                    <button
+                      key={job.id}
+                      className="pipeline-job"
+                      onClick={() => window.open(job.web_url, "_blank")}
+                      title={`Open job log: ${job.name}`}
+                    >
+                      <span
+                        className="pipeline-job-icon"
+                        style={{ color: pipelineColor(job.status) }}
+                      >
+                        {pipelineJobIcon(job.status)}
+                      </span>
+                      <span className="pipeline-job-name">{job.name}</span>
+                      <span className="pipeline-job-status" style={{ color: pipelineColor(job.status) }}>
+                        {job.status}
+                      </span>
+                      {job.duration !== null && (
+                        <span className="pipeline-job-dur">{formatDuration(job.duration)}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </section>
       )}
 
@@ -305,6 +461,9 @@ export function ProjectsPage() {
   const [openAgent, setOpenAgent] = useState<Agent | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
+  // Sidebar pipeline badges: Map of projectPath → PipelineData | null
+  const [sidebarPipelines, setSidebarPipelines] = useState<Map<string, PipelineData | null>>(new Map());
+
   // Config / project roots
   const [showRootsPanel, setShowRootsPanel] = useState(false);
   const [config, setConfig] = useState<Config | null>(null);
@@ -346,6 +505,36 @@ export function ProjectsPage() {
   useEffect(() => {
     loadConfig();
   }, [loadConfig]);
+
+  // Sidebar pipeline badges — fetch all projects every 10s
+  useEffect(() => {
+    if (projects.length === 0) return;
+
+    const fetchAll = () => {
+      Promise.allSettled(
+        projects.map((p) =>
+          fetch(`/api/projects/${encodePath(p.path)}/pipeline`)
+            .then((r) => r.json() as Promise<PipelineData | null>)
+            .then((data) => ({ path: p.path, data }))
+            .catch(() => ({ path: p.path, data: null }))
+        )
+      ).then((results) => {
+        setSidebarPipelines((prev) => {
+          const next = new Map(prev);
+          for (const r of results) {
+            if (r.status === "fulfilled") {
+              next.set(r.value.path, r.value.data);
+            }
+          }
+          return next;
+        });
+      });
+    };
+
+    fetchAll();
+    const timer = setInterval(fetchAll, 10000);
+    return () => clearInterval(timer);
+  }, [projects]);
 
   const handleRemoveRoot = useCallback(async (root: string) => {
     if (!config) return;
@@ -503,6 +692,17 @@ export function ProjectsPage() {
                         {counts.working > 0 && (
                           <span className="pm-pip pm-pip-working" title="Working">{counts.working}</span>
                         )}
+                        {(() => {
+                          const pip = sidebarPipelines.get(p.path);
+                          if (!pip) return null;
+                          return (
+                            <span
+                              className="pm-pip pm-pip-pipeline"
+                              style={{ background: pipelineColor(pip.status) }}
+                              title={`Pipeline: ${pip.status}`}
+                            />
+                          );
+                        })()}
                       </span>
                     </button>
                   );
