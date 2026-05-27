@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useLocation } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
+import { useLocation, Link } from "react-router-dom";
 import { useAgentsStore, stateColor, stateLabel } from "../store/agents";
 import type { Agent } from "../store/agents";
+import { BacklogSection } from "../components/BacklogSection";
 
 // ----------------------------------------------------------------
 // Types
@@ -20,6 +20,7 @@ interface Project {
   hasClaudeMd: boolean;
   hasMcpJson: boolean;
   hasSkills: boolean;
+  hasBacklog: boolean;
   subProjects: SubProject[];
 }
 
@@ -49,20 +50,6 @@ interface PipelineData {
   started_at: string | null;
   duration: number | null;
   jobs: PipelineJob[];
-}
-
-interface BacklogFile {
-  name: string;
-  content: string;
-}
-
-interface ParsedTask {
-  id: string;
-  title: string;
-  status: string;
-  priority: string;
-  fileName: string;
-  content: string;
 }
 
 // ----------------------------------------------------------------
@@ -129,95 +116,232 @@ const NEEDS_INPUT_STATES = new Set(["asking_user", "waiting_for_approval"]);
 const WORKING_STATES = new Set(["working", "initialized"]);
 
 // ----------------------------------------------------------------
-// Simple inline YAML frontmatter parser
+// RunItem type and run helpers (for ProjectRunsTab)
 // ----------------------------------------------------------------
 
-function parseFrontmatter(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  if (!content.startsWith("---")) return result;
-  const end = content.indexOf("\n---", 3);
-  if (end === -1) return result;
-  const block = content.slice(3, end);
-  for (const line of block.split("\n")) {
-    const colon = line.indexOf(":");
-    if (colon === -1) continue;
-    const key = line.slice(0, colon).trim();
-    const value = line.slice(colon + 1).trim().replace(/^["']|["']$/g, "");
-    if (key) result[key] = value;
+interface RunItem {
+  id: number;
+  schedule_id: number | null;
+  launch_type: string | null;
+  terminal_type: string | null;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  status: string | null;
+  ai_title: string | null;
+  schedule_name: string | null;
+}
+
+function runFormatMs(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  if (m < 60) return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+}
+
+function runFormatDuration(ms: number | null, startedAt: string): string {
+  if (ms === null) {
+    const elapsed = Date.now() - new Date(startedAt).getTime();
+    return runFormatMs(elapsed);
   }
-  return result;
+  return runFormatMs(ms);
 }
 
-function parseBacklogFiles(files: BacklogFile[]): ParsedTask[] {
-  return files
-    .map((f) => {
-      const fm = parseFrontmatter(f.content);
-      const status = (fm.status ?? "").toLowerCase();
-      const priority = fm.priority ?? "";
-      const idMatch = f.name.match(/TASK-\d+/i);
-      const id = idMatch ? idMatch[0].toUpperCase() : f.name.replace(/\.md$/, "");
-      const title = fm.title ?? f.name.replace(/\.md$/, "").replace(/^task-\d+\s*-?\s*/i, "");
-      return { id, title, status, priority, fileName: f.name, content: f.content };
-    })
-    .filter((t) => !t.status.includes("done") && !t.status.includes("archive"));
+function runStatusBadge(status: string | null): { label: string; color: string; bgColor: string } {
+  switch (status) {
+    case "success":
+      return { label: "✓", color: "#1a7f37", bgColor: "#dafbe1" };
+    case "failed":
+      return { label: "✗", color: "#cf222e", bgColor: "#ffebe9" };
+    case "running":
+      return { label: "●", color: "#9a6700", bgColor: "#fff8c5" };
+    case "cancelled":
+      return { label: "○", color: "#57606a", bgColor: "#f6f8fa" };
+    default:
+      return { label: "?", color: "#57606a", bgColor: "#f6f8fa" };
+  }
+}
+
+function runTypeLabel(run: RunItem): string {
+  if (run.launch_type === "scheduled") return "scheduled";
+  if (run.launch_type === "manual_trigger") return "manual/trigger";
+  if (run.terminal_type) return `manual/${run.terminal_type}`;
+  return run.launch_type ?? "unknown";
+}
+
+function runFormatStarted(startedAt: string): string {
+  const d = new Date(startedAt);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday)
+    return `today ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return d.toLocaleDateString();
 }
 
 // ----------------------------------------------------------------
-// TaskDetailModal
+// ProjectRunsTab
 // ----------------------------------------------------------------
 
-interface TaskDetailModalProps {
-  task: ParsedTask;
-  rootProjectPath: string;
-  subProjectName: string;
-  onClose: () => void;
+interface ProjectRunsTabProps {
+  projectPath: string;
 }
 
-function TaskDetailModal({ task, rootProjectPath, subProjectName, onClose }: TaskDetailModalProps) {
-  const [running, setRunning] = useState(false);
+export function ProjectRunsTab({ projectPath }: ProjectRunsTabProps) {
+  const [runs, setRuns] = useState<RunItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [typeFilter, setTypeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(0);
+  const limit = 20;
 
-  const handleBackdrop = useCallback(
-    (e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); },
-    [onClose]
-  );
+  // Reset filters when project changes
+  useEffect(() => {
+    setTypeFilter("");
+    setStatusFilter("");
+    setPage(0);
+  }, [projectPath]);
 
-  const handleImplement = useCallback(async () => {
-    setRunning(true);
-    try {
-      await fetch(`/api/projects/${encodePath(rootProjectPath)}/implement/${task.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subProject: subProjectName }),
-      });
-      onClose();
-    } catch {/* ignore */} finally {
-      setRunning(false);
-    }
-  }, [task.id, rootProjectPath, subProjectName, onClose]);
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set("project", projectPath);
+    if (typeFilter) params.set("type", typeFilter);
+    if (statusFilter) params.set("status", statusFilter);
+    params.set("limit", String(limit));
+    params.set("offset", String(page * limit));
+
+    fetch(`/api/runs?${params}`)
+      .then((r) => r.json())
+      .then((data: { runs: RunItem[]; total: number }) => {
+        setRuns(data.runs);
+        setTotal(data.total);
+      })
+      .catch(console.error);
+  }, [projectPath, typeFilter, statusFilter, page]);
+
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  void tick;
+
+  const pageCount = Math.ceil(total / limit);
 
   return (
-    <div className="modal-backdrop" onClick={handleBackdrop}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div className="modal-title">
-            <span className="task-modal-id">{task.id}</span>
-            {" · "}
-            {task.title}
-          </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="modal-body modal-body-md">
-          <ReactMarkdown>{task.content}</ReactMarkdown>
-        </div>
-        <div className="modal-foot">
-          <button className="btn" onClick={onClose}>Zrušit</button>
-          <div style={{ flex: 1 }} />
-          <button className="btn btn-primary" onClick={handleImplement} disabled={running}>
-            {running ? "Spouštím…" : "Spustit implementaci →"}
+    <section className="pd-block">
+      {/* Filters — no project filter! */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <select
+          value={typeFilter}
+          onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}
+          data-testid="runs-tab-filter-type"
+        >
+          <option value="">All types</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="manual">Manual</option>
+          <option value="manual_trigger">Manual trigger</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
+          data-testid="runs-tab-filter-status"
+        >
+          <option value="">All statuses</option>
+          <option value="running">Running</option>
+          <option value="success">Success</option>
+          <option value="failed">Failed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+
+      {runs.length === 0 ? (
+        <div className="empty-state" data-testid="runs-tab-empty">No runs yet for this project.</div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>
+              {["TYPE", "STARTED", "DURATION", "STATUS", "TITLE"].map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    textAlign: "left",
+                    padding: "4px 8px",
+                    color: "var(--muted, #57606a)",
+                    fontWeight: 500,
+                    borderBottom: "1px solid var(--border, #e1e4e8)",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {runs.map((run) => {
+              const badge = runStatusBadge(run.status);
+              return (
+                <tr key={run.id}>
+                  <td style={{ padding: "4px 8px" }}>
+                    {run.launch_type === "scheduled" && run.schedule_id ? (
+                      <Link to="/schedules" data-testid={`runs-tab-schedule-link-${run.id}`}>
+                        {runTypeLabel(run)}
+                      </Link>
+                    ) : (
+                      runTypeLabel(run)
+                    )}
+                  </td>
+                  <td style={{ padding: "4px 8px", color: "var(--muted, #57606a)" }}>
+                    {runFormatStarted(run.started_at)}
+                  </td>
+                  <td style={{ padding: "4px 8px" }}>
+                    {run.status === "running"
+                      ? runFormatDuration(null, run.started_at)
+                      : run.duration_ms != null
+                      ? runFormatDuration(run.duration_ms, run.started_at)
+                      : "—"}
+                  </td>
+                  <td style={{ padding: "4px 8px" }}>
+                    <span
+                      data-testid={`runs-tab-status-${run.id}`}
+                      style={{
+                        color: badge.color,
+                        backgroundColor: badge.bgColor,
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                      }}
+                    >
+                      {badge.label} {run.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: "4px 8px", color: "var(--muted, #57606a)", fontStyle: "italic" }}>
+                    {run.ai_title ?? ""}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {/* Pagination */}
+      {pageCount > 1 && (
+        <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={() => setPage((p) => p - 1)} disabled={page === 0}>
+            ← prev
+          </button>
+          <span>
+            Page {page + 1} of {pageCount}
+          </span>
+          <button onClick={() => setPage((p) => p + 1)} disabled={(page + 1) * limit >= total}>
+            next →
           </button>
         </div>
-      </div>
-    </div>
+      )}
+    </section>
   );
 }
 
@@ -231,35 +355,6 @@ interface SubProjectDetailProps {
 }
 
 function SubProjectDetail({ subProject, rootProjectPath }: SubProjectDetailProps) {
-  const encodedSub = encodePath(subProject.path);
-  const encodedRoot = encodePath(rootProjectPath);
-  const [tasks, setTasks] = useState<ParsedTask[] | null>(null);
-  const [selectedTask, setSelectedTask] = useState<ParsedTask | null>(null);
-
-  useEffect(() => {
-    setTasks(null);
-    fetch(`/api/projects/${encodedSub}/backlog`)
-      .then((r) => r.json())
-      .then((data: { files: BacklogFile[] }) => setTasks(parseBacklogFiles(data.files)))
-      .catch(() => setTasks([]));
-  }, [encodedSub]);
-
-  const handleImplementAll = useCallback(() => {
-    fetch(`/api/projects/${encodedRoot}/implement-all`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subProject: subProject.name }),
-    }).catch(() => {/* ignore */});
-  }, [encodedRoot, subProject.name]);
-
-  const handleImplementNext = useCallback(() => {
-    fetch(`/api/projects/${encodedRoot}/implement-next`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subProject: subProject.name }),
-    }).catch(() => {/* ignore */});
-  }, [encodedRoot, subProject.name]);
-
   return (
     <div className="pd-container">
       <header className="pd-head">
@@ -271,73 +366,19 @@ function SubProjectDetail({ subProject, rootProjectPath }: SubProjectDetailProps
             <span className="pd-flag">Backlog</span>
           </div>
         </div>
-        <div className="sp-actions">
-          <button className="btn" onClick={handleImplementNext} title="Implementuj první To Do task">
-            Next task
-          </button>
-          <button className="btn btn-primary" onClick={handleImplementAll} title="Implementuj všechny tasky">
-            Implementuj vše
-          </button>
-        </div>
       </header>
 
-      <section className="pd-block">
-        <div className="pd-block-head">
-          Open tasks
-          {tasks !== null && <span className="section-count">{tasks.length}</span>}
-        </div>
-
-        {tasks === null ? (
-          <div className="empty-state">Loading…</div>
-        ) : tasks.length === 0 ? (
-          <div className="empty-state">No open tasks found.</div>
-        ) : (
-          <div className="sp-task-table">
-            <div className="sp-task-header">
-              <span className="sp-task-col sp-task-col-id">ID</span>
-              <span className="sp-task-col sp-task-col-title">Title</span>
-              <span className="sp-task-col sp-task-col-prio">Priority</span>
-              <span className="sp-task-col sp-task-col-status">Status</span>
-              <span className="sp-task-col sp-task-col-action" />
-            </div>
-            {tasks.map((t) => (
-              <div
-                key={t.fileName}
-                className="sp-task-row"
-                onClick={() => setSelectedTask(t)}
-              >
-                <span className="sp-task-col sp-task-col-id">{t.id}</span>
-                <span className="sp-task-col sp-task-col-title">{t.title}</span>
-                <span className="sp-task-col sp-task-col-prio">{t.priority || "—"}</span>
-                <span className="sp-task-col sp-task-col-status">{t.status || "—"}</span>
-                <span className="sp-task-col sp-task-col-action">
-                  <button
-                    className="btn btn-xs"
-                    onClick={(e) => { e.stopPropagation(); setSelectedTask(t); }}
-                  >
-                    Run
-                  </button>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {selectedTask && (
-        <TaskDetailModal
-          task={selectedTask}
-          rootProjectPath={rootProjectPath}
-          subProjectName={subProject.name}
-          onClose={() => setSelectedTask(null)}
-        />
-      )}
+      <BacklogSection
+        backlogPath={subProject.path}
+        actionRootPath={rootProjectPath}
+        projectName={subProject.name}
+      />
     </div>
   );
 }
 
 // ----------------------------------------------------------------
-// AgentTerminalModal (inline, matches AgentsPage version)
+// AgentTerminalModal
 // ----------------------------------------------------------------
 
 interface ModalProps {
@@ -360,9 +401,7 @@ function AgentTerminalModal({ agent, onClose }: ModalProps) {
   }, [agent.pid, onClose]);
 
   const handleBackdrop = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) onClose();
-    },
+    (e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); },
     [onClose]
   );
 
@@ -424,19 +463,21 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
   const encoded = encodePath(project.path);
   const color = projectColor(project.path);
 
-  // CLAUDE.md state
+  const [activeTab, setActiveTab] = useState<"overview" | "runs">("overview");
+
+  useEffect(() => {
+    setActiveTab("overview");
+  }, [project.path]);
+
   const [claudeMd, setClaudeMd] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Skills state
   const [skills, setSkills] = useState<Skill[]>([]);
 
-  // Pipeline state
   const [pipeline, setPipeline] = useState<PipelineData | null | undefined>(undefined);
 
-  // Load CLAUDE.md
   useEffect(() => {
     setClaudeMd(null);
     setEditMode(false);
@@ -446,7 +487,6 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
       .catch(() => setClaudeMd(""));
   }, [encoded]);
 
-  // Load skills
   useEffect(() => {
     setSkills([]);
     if (!project.hasSkills) return;
@@ -456,7 +496,6 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
       .catch(() => setSkills([]));
   }, [encoded, project.hasSkills]);
 
-  // Load pipeline with adaptive polling
   useEffect(() => {
     setPipeline(undefined);
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -466,7 +505,6 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
         .then((r) => r.json())
         .then((data: PipelineData | null) => {
           setPipeline(data);
-          // Poll faster for active pipelines
           const isActive = data && (data.status === "running" || data.status === "pending");
           const interval = isActive ? 5000 : 30000;
           timer = setTimeout(fetchPipeline, interval);
@@ -486,9 +524,7 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
     setEditMode(true);
   }, [claudeMd]);
 
-  const handleEditCancel = useCallback(() => {
-    setEditMode(false);
-  }, []);
+  const handleEditCancel = useCallback(() => setEditMode(false), []);
 
   const handleEditSave = useCallback(async () => {
     setSaving(true);
@@ -507,7 +543,6 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
 
   return (
     <div className="pd-container">
-      {/* Header */}
       <header className="pd-head">
         <div className="pd-mark" style={{ background: color }} />
         <div className="pd-meta">
@@ -527,10 +562,36 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
             {project.hasClaudeMd && <span className="pd-flag">CLAUDE.md</span>}
             {project.hasMcpJson && <span className="pd-flag">MCP</span>}
             {project.hasSkills && <span className="pd-flag">Skills</span>}
+            {project.hasBacklog && <span className="pd-flag">Backlog</span>}
           </div>
         </div>
       </header>
 
+      {/* Tab nav */}
+      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border, #e1e4e8)", marginBottom: 16 }}>
+        {(["overview", "runs"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            data-testid={`tab-${tab}`}
+            style={{
+              padding: "8px 16px",
+              border: "none",
+              borderBottom: activeTab === tab ? "2px solid var(--accent, #0969da)" : "2px solid transparent",
+              background: "none",
+              cursor: "pointer",
+              fontWeight: activeTab === tab ? 600 : 400,
+              color: activeTab === tab ? "var(--accent, #0969da)" : "inherit",
+              textTransform: "capitalize",
+            }}
+          >
+            {tab === "overview" ? "Overview" : "Runs"}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "overview" && (
+        <>
       {/* Skills */}
       {project.hasSkills && skills.length > 0 && (
         <section className="pd-block">
@@ -547,6 +608,15 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
             ))}
           </div>
         </section>
+      )}
+
+      {/* Backlog */}
+      {project.hasBacklog && (
+        <BacklogSection
+          backlogPath={project.path}
+          actionRootPath={project.path}
+          projectName={project.name}
+        />
       )}
 
       {/* Pipeline */}
@@ -664,10 +734,7 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
           <div className="pd-agents">
             {agents.map((a) => (
               <button key={a.pid} className="pd-agent" onClick={() => onOpenAgent(a)}>
-                <span
-                  className="pd-agent-dot"
-                  style={{ background: stateColor(a.state) }}
-                />
+                <span className="pd-agent-dot" style={{ background: stateColor(a.state) }} />
                 <div className="pd-agent-body">
                   <div className="pd-agent-title">{sessionTitle(a)}</div>
                   <div className="pd-agent-sub">{stateLabel(a.state)}</div>
@@ -677,7 +744,10 @@ function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAg
           </div>
         )}
       </section>
+        </>
+      )}
 
+      {activeTab === "runs" && <ProjectRunsTab projectPath={project.path} />}
     </div>
   );
 }
@@ -727,10 +797,8 @@ export function ProjectsPage() {
     });
   }, []);
 
-  // Sidebar pipeline badges: Map of projectPath → PipelineData | null
   const [sidebarPipelines, setSidebarPipelines] = useState<Map<string, PipelineData | null>>(new Map());
 
-  // Config / project roots
   const [showRootsPanel, setShowRootsPanel] = useState(false);
   const [config, setConfig] = useState<Config | null>(null);
   const [newRoot, setNewRoot] = useState("");
@@ -754,7 +822,6 @@ export function ProjectsPage() {
           if (prev) return prev;
           return data.length > 0 ? data[0].path : null;
         });
-        // If navigated with a specific path, make sure that group is not collapsed
         if (!navigationHandled.current && navigationProjectPath) {
           navigationHandled.current = true;
           const found = data.find((p) => p.path === navigationProjectPath);
@@ -771,9 +838,7 @@ export function ProjectsPage() {
       .catch(() => {/* ignore */});
   }, [navigationProjectPath]);
 
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+  useEffect(() => { loadProjects(); }, [loadProjects]);
 
   const loadConfig = useCallback(() => {
     fetch("/api/config")
@@ -782,11 +847,8 @@ export function ProjectsPage() {
       .catch(() => {/* ignore */});
   }, []);
 
-  useEffect(() => {
-    loadConfig();
-  }, [loadConfig]);
+  useEffect(() => { loadConfig(); }, [loadConfig]);
 
-  // Sidebar pipeline badges — fetch all projects every 10s
   useEffect(() => {
     if (projects.length === 0) return;
 
@@ -802,9 +864,7 @@ export function ProjectsPage() {
         setSidebarPipelines((prev) => {
           const next = new Map(prev);
           for (const r of results) {
-            if (r.status === "fulfilled") {
-              next.set(r.value.path, r.value.data);
-            }
+            if (r.status === "fulfilled") next.set(r.value.path, r.value.data);
           }
           return next;
         });
@@ -856,7 +916,6 @@ export function ProjectsPage() {
   const selected = projects.find((p) => p.path === selectedPath) ?? null;
   const selectedSub = selected?.subProjects?.find((sp) => sp.path === selectedSubPath) ?? null;
 
-  // Group projects by parent directory
   const groupedProjects = useMemo(() => {
     const groups = new Map<string, Project[]>();
     for (const p of projects) {
@@ -867,7 +926,6 @@ export function ProjectsPage() {
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [projects]);
 
-  // Per-project agent counts
   function projectCounts(projectPath: string) {
     const projectAgents = agentList.filter((a) => a.project_root === projectPath);
     return {
@@ -876,7 +934,6 @@ export function ProjectsPage() {
     };
   }
 
-  // Agents for selected project
   const selectedAgents = useMemo(
     () => selected ? agentList.filter((a) => a.project_root === selected.path) : [],
     [agentList, selected]
@@ -914,6 +971,9 @@ export function ProjectsPage() {
             {counts.working > 0 && (
               <span className="pm-pip pm-pip-working" title="Working">{counts.working}</span>
             )}
+            {p.hasBacklog && (
+              <span className="pm-pip pm-pip-backlog" title="Backlog">BL</span>
+            )}
             {(() => {
               const pip = sidebarPipelines.get(p.path);
               if (!pip) return null;
@@ -935,7 +995,7 @@ export function ProjectsPage() {
           >
             <span className="pm-sub-indent" />
             <span className="pm-name">{sp.name}</span>
-            <span className="pm-pip pm-pip-backlog">BL</span>
+            <span className="pm-pip pm-pip-backlog" title="Backlog">BL</span>
           </button>
         ))}
       </div>
@@ -944,14 +1004,12 @@ export function ProjectsPage() {
 
   return (
     <div className="projects-page">
-      {/* Left panel */}
       <aside className="projects-master">
         <div className="projects-master-head">
           Projects <span className="section-count">{projects.length}</span>
         </div>
 
         <div className="projects-master-list">
-          {/* Favorites */}
           {favoriteProjects.length > 0 && (
             <div className="pm-section">
               <div className="pm-section-head">Favorites</div>
@@ -959,7 +1017,6 @@ export function ProjectsPage() {
             </div>
           )}
 
-          {/* Active */}
           {activeProjects.length > 0 && (
             <div className="pm-section">
               <div className="pm-section-head">Active</div>
@@ -967,7 +1024,6 @@ export function ProjectsPage() {
             </div>
           )}
 
-          {/* All Projects */}
           <div className="pm-section">
             <div className="pm-section-head pm-section-head-row">
               All Projects
@@ -1048,7 +1104,6 @@ export function ProjectsPage() {
         </div>
       </aside>
 
-      {/* Right panel */}
       <section className="projects-detail">
         {selectedSub ? (
           <SubProjectDetail
@@ -1070,7 +1125,6 @@ export function ProjectsPage() {
         )}
       </section>
 
-      {/* Agent modal */}
       {openAgent && (
         <AgentTerminalModal
           agent={openAgent}

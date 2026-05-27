@@ -1,9 +1,10 @@
 ---
 id: TASK-26
 title: 'Frontend: project detail — add Runs tab with per-project history'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-27 13:40'
+updated_date: '2026-05-27 15:11'
 labels:
   - frontend
   - ui
@@ -39,13 +40,13 @@ Runs tab content is identical to the global `/runs` page but pre-filtered to thi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Runs tab appears in project detail navigation
-- [ ] #2 Runs tab pre-filters by project_root of current project
-- [ ] #3 Project filter dropdown absent (project is implicit)
-- [ ] #4 All run types shown for this project
-- [ ] #5 Type and status filters work within project scope
-- [ ] #6 Clicking scheduled badge navigates to schedule detail
-- [ ] #7 Tests: tab renders with correct project filter applied to API call
-- [ ] #8 Tests: type/status filter interactions
-- [ ] #9 Tests: empty state for project with no runs
+- [x] #1 Runs tab appears in project detail navigation
+- [x] #2 Runs tab pre-filters by project_root of current project
+- [x] #3 Project filter dropdown absent (project is implicit)
+- [x] #4 All run types shown for this project
+- [x] #5 Type and status filters work within project scope
+- [x] #6 Clicking scheduled badge navigates to schedule detail
+- [x] #7 Tests: tab renders with correct project filter applied to API call
+- [x] #8 Tests: type/status filter interactions
+- [x] #9 Tests: empty state for project with no runs
 <!-- AC:END -->
