@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import type { AgentStore } from "../agents";
 import type { WriteStateFn } from "../index";
+import { handleSessionStart } from "../runs";
 
 export function createAgentRouter(store: AgentStore, writeState: WriteStateFn): Router {
   const router = Router();
@@ -12,6 +13,17 @@ export function createAgentRouter(store: AgentStore, writeState: WriteStateFn): 
     if (!pid || !/^\d+$/.test(pid)) {
       res.status(400).json({ error: "missing pid" });
       return;
+    }
+
+    const hookEvent = String(data["hook_event"] ?? "");
+    if (hookEvent === "SessionStart") {
+      handleSessionStart({
+        pid: pid,
+        session_id: data["session_id"] as string | undefined,
+        schedule_id: data["schedule_id"] as string | number | undefined,
+        terminal_type: data["terminal_type"] as string | undefined,
+        project_root: data["project_root"] as string | undefined,
+      });
     }
 
     const changed = store.upsert(data);

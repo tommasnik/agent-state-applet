@@ -16,6 +16,7 @@ import {
 import { createWsServer, broadcastState } from "./ws";
 import { initDb, getDb } from "./db";
 import { schedulerInit } from "./scheduler";
+import { cleanupStaleRuns } from "./runs";
 import { buildApp } from "./app";
 
 const HOST = "127.0.0.1";
@@ -154,6 +155,7 @@ process.on("SIGINT", shutdown);
 
 // --- Start ---
 initDb();
+cleanupStaleRuns();
 schedulerInit();
 restoreState();
 startPidChecker();
