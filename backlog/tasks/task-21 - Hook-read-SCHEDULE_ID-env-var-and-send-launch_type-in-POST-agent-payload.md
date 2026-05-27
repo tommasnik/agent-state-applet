@@ -1,9 +1,10 @@
 ---
 id: TASK-21
 title: 'Hook: read SCHEDULE_ID env var and send launch_type in POST /agent payload'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-27 13:39'
+updated_date: '2026-05-27 14:44'
 labels:
   - hook
   - tdd
@@ -23,10 +24,10 @@ This is how the server distinguishes scheduled sessions from manual IDE sessions
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 schedule_id field present in payload when SCHEDULE_ID env var is set
-- [ ] #2 schedule_id field absent (not null, absent) when env var not set
-- [ ] #3 Tests: payload with SCHEDULE_ID set
-- [ ] #4 Tests: payload without SCHEDULE_ID
-- [ ] #5 Tests: SCHEDULE_ID value correctly passed through
-- [ ] #6 make hook deploys updated hook to ~/.claude/hooks/
+- [x] #1 schedule_id field present in payload when SCHEDULE_ID env var is set
+- [x] #2 schedule_id field absent (not null, absent) when env var not set
+- [x] #3 Tests: payload with SCHEDULE_ID set
+- [x] #4 Tests: payload without SCHEDULE_ID
+- [x] #5 Tests: SCHEDULE_ID value correctly passed through
+- [x] #6 make hook deploys updated hook to ~/.claude/hooks/
 <!-- AC:END -->

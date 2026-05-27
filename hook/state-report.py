@@ -332,6 +332,11 @@ def main():
         "tty":          get_tty(claude_pid),
     }
 
+    # schedule_id — set when running as a scheduled session (SCHEDULE_ID env var)
+    schedule_id = os.environ.get("SCHEDULE_ID")
+    if schedule_id:
+        payload["schedule_id"] = schedule_id
+
     # parent_session_id — set when running as a subprocess subagent of another claude
     parent_session_id = find_parent_claude_session(claude_pid)
     if parent_session_id:
