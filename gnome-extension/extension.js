@@ -19,6 +19,7 @@ import GLib    from 'gi://GLib';
 import Gio     from 'gi://Gio';
 import Clutter from 'gi://Clutter';
 import Pango   from 'gi://Pango';
+import Shell   from 'gi://Shell';
 
 import {Extension}       from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main         from 'resource:///org/gnome/shell/ui/main.js';
@@ -57,6 +58,52 @@ class ClaudeIndicator extends PanelMenu.Button {
                     return null;
                 },
                 getWindowActors: () => global.get_window_actors(),
+                // resolveAppIcon(window_id, pid, size) → Clutter actor (icon texture) or null.
+                // Uses Shell.WindowTracker to look up the app owning the given X11 window,
+                // falling back to PID-based lookup. Mirrors Cinnamon adapter behavior.
+                resolveAppIcon: (windowIdHex, pid, size) => {
+                    const log = (msg) => {
+                        try {
+                            const f = Gio.File.new_for_path('/tmp/claude-icon.log');
+                            const out = f.append_to(Gio.FileCreateFlags.NONE, null);
+                            out.write_bytes(new GLib.Bytes('[icon] ' + msg + '\n'), null);
+                            out.close(null);
+                        } catch (_) {}
+                    };
+                    try {
+                        const tracker = Shell.WindowTracker.get_default();
+                        let app = null;
+
+                        if (windowIdHex) {
+                            const targetXid = parseInt(windowIdHex, 16);
+                            const actors = global.get_window_actors();
+                            log('lookup win=' + windowIdHex + ' target=' + targetXid + ' actors=' + actors.length);
+                            for (let i = 0; i < actors.length; i++) {
+                                const mw = actors[i].get_meta_window && actors[i].get_meta_window();
+                                if (!mw) continue;
+                                const xid = mw.get_xwindow ? mw.get_xwindow() : 0;
+                                if (xid === targetXid) {
+                                    app = tracker.get_window_app(mw);
+                                    log('window match xid=' + xid + ' app=' + (app ? app.get_id() : 'null'));
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!app && pid) {
+                            app = tracker.get_app_from_pid(parseInt(pid, 10));
+                            log('pid fallback pid=' + pid + ' app=' + (app ? app.get_id() : 'null'));
+                        }
+
+                        if (!app) { log('no app win=' + windowIdHex + ' pid=' + pid); return null; }
+                        const tex = app.create_icon_texture(size || 20);
+                        log('returned tex for app=' + app.get_id() + ' size=' + size);
+                        return tex;
+                    } catch (e) {
+                        log('ERROR ' + e.message);
+                        return null;
+                    }
+                },
             },
             config:  {},   // future: feed from this.getSettings()
             onClick: (pid, agent, action) => self._onClick(pid, agent, action),
@@ -74,20 +121,34 @@ class ClaudeIndicator extends PanelMenu.Button {
             return Clutter.EVENT_STOP;
         });
 
-        this.add_child(dashBtn);
-        this.add_child(this._indicator.box);
+        // PanelMenu.Button uses BinLayout (overlays children), so wrap dashBtn +
+        // indicator box in a horizontal BoxLayout to lay them side-by-side.
+        const wrap = new St.BoxLayout({ vertical: false, y_align: Clutter.ActorAlign.CENTER });
+        wrap.add_child(dashBtn);
+        wrap.add_child(this._indicator.box);
+        this.add_child(wrap);
         this.set_style('padding: 0;');
 
-        // DEBUG: log every event reaching the box
-        this._indicator.box.connect('captured-event', (_a, event) => {
-            let t = event && event.type ? event.type() : -1;
-            GLib.spawn_command_line_async('sh -c "echo box-captured-event type=' + t + ' >> /tmp/claude-flash.log"');
-            return Clutter.EVENT_PROPAGATE;
-        });
-        this.connect('button-press-event', () => {
-            GLib.spawn_command_line_async('sh -c "echo PanelButton-press >> /tmp/claude-flash.log"');
-            return Clutter.EVENT_PROPAGATE;
-        });
+        // Listen for FlashWindow D-Bus signals emitted by the server after web UI focus
+        this._dbusFlashId = Gio.DBus.session.signal_subscribe(
+            null,
+            'org.claude.State',
+            'FlashWindow',
+            '/org/claude/State',
+            null,
+            Gio.DBusSignalFlags.NONE,
+            (_conn, _sender, _path, _iface, _signal, params) => {
+                try {
+                    const xid = params.get_child_value(0).get_string()[0];
+                    if (xid) {
+                        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
+                            self._indicator.flashWindow(xid);
+                            return GLib.SOURCE_REMOVE;
+                        });
+                    }
+                } catch (_) {}
+            }
+        );
     }
 
     _agentWindowFocused(agent) {
@@ -113,7 +174,6 @@ class ClaudeIndicator extends PanelMenu.Button {
     }
 
     _onClick(pid, agent, action) {
-        GLib.spawn_command_line_async('sh -c "echo \\"_onClick pid=' + pid + ' action=' + action + '\\" >> /tmp/claude-flash.log"');
         if (action === 'reset') {
             this._resetAgent(pid);
         }
@@ -130,7 +190,6 @@ class ClaudeIndicator extends PanelMenu.Button {
     }
 
     _focusAgent(pid) {
-        GLib.spawn_command_line_async('sh -c "echo \\"_focusAgent pid=' + pid + '\\" >> /tmp/claude-flash.log"');
         // Spawn curl to /focus and read response for the (possibly server-resolved)
         // window_id, then flash it. Using Gio.Subprocess to capture stdout.
         const self = this;
@@ -154,10 +213,7 @@ class ClaudeIndicator extends PanelMenu.Button {
                 let [, stdout] = p.communicate_utf8_finish(res);
                 let data = JSON.parse(stdout || '{}');
                 windowId = data.window_id || null;
-            } catch (e) {
-                GLib.spawn_command_line_async('sh -c "echo \\"focus parse fail: ' + e + '\\" >> /tmp/claude-flash.log"');
-            }
-            GLib.spawn_command_line_async('sh -c "echo \\"focus pid=' + pid + ' window_id=' + windowId + '\\" >> /tmp/claude-flash.log"');
+            } catch (_) {}
             if (windowId) {
                 GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
                     self._indicator.flashWindow(windowId);
@@ -168,6 +224,10 @@ class ClaudeIndicator extends PanelMenu.Button {
     }
 
     destroy() {
+        if (this._dbusFlashId) {
+            Gio.DBus.session.signal_unsubscribe(this._dbusFlashId);
+            this._dbusFlashId = 0;
+        }
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;
@@ -178,6 +238,7 @@ class ClaudeIndicator extends PanelMenu.Button {
 
 export default class ClaudeAgentStateExtension extends Extension {
     enable() {
+        GLib.spawn_command_line_async('sh -c ' + GLib.shell_quote('echo "[enable] ' + Date.now() + '" >> /tmp/claude-icon.log'));
         this._indicator = new ClaudeIndicator();
         Main.panel.addToStatusArea(UUID, this._indicator);
     }
