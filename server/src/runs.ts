@@ -50,9 +50,9 @@ export function handleSessionStart(payload: {
 
     // Create new manual run
     db.prepare(
-      `INSERT INTO runs (pid, session_id, launch_type, terminal_type, tty, started_at, status)
-       VALUES (?, ?, 'manual', ?, ?, datetime('now'), 'running')`
-    ).run(pidNum, payload.session_id ?? null, payload.terminal_type ?? null, payload.tty ?? null);
+      `INSERT INTO runs (pid, session_id, launch_type, terminal_type, tty, project_root, started_at, status)
+       VALUES (?, ?, 'manual', ?, ?, ?, datetime('now'), 'running')`
+    ).run(pidNum, payload.session_id ?? null, payload.terminal_type ?? null, payload.tty ?? null, payload.project_root ?? null);
   } else {
     // Scheduled session — update existing run's pid/session_id if missing
     db.prepare(

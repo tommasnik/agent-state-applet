@@ -1,9 +1,10 @@
 ---
 id: TASK-24
 title: 'API: GET /api/runs endpoint with filtering and pagination'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-27 13:39'
+updated_date: '2026-05-27 14:59'
 labels:
   - backend
   - api
@@ -54,14 +55,14 @@ Response: single Run object
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 GET /api/runs returns all runs with no filters
-- [ ] #2 Filtering by project, type, status, since/until all work correctly
-- [ ] #3 limit and offset pagination works, total reflects unfiltered count
-- [ ] #4 GET /api/runs/:id returns 404 for unknown id
-- [ ] #5 duration_ms is null for running runs, positive integer for finished runs
-- [ ] #6 schedule_name joined correctly when schedule_id is set
-- [ ] #7 Tests: each filter param individually
-- [ ] #8 Tests: combined filters
-- [ ] #9 Tests: pagination (limit/offset)
-- [ ] #10 Tests: empty result set returns {runs: [], total: 0}
+- [x] #1 GET /api/runs returns all runs with no filters
+- [x] #2 Filtering by project, type, status, since/until all work correctly
+- [x] #3 limit and offset pagination works, total reflects unfiltered count
+- [x] #4 GET /api/runs/:id returns 404 for unknown id
+- [x] #5 duration_ms is null for running runs, positive integer for finished runs
+- [x] #6 schedule_name joined correctly when schedule_id is set
+- [x] #7 Tests: each filter param individually
+- [x] #8 Tests: combined filters
+- [x] #9 Tests: pagination (limit/offset)
+- [x] #10 Tests: empty result set returns {runs: [], total: 0}
 <!-- AC:END -->

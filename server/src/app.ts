@@ -12,6 +12,7 @@ import projectsRouter from "./routes/projects";
 import pipelineRouter from "./routes/pipeline";
 import schedulesRouter from "./routes/schedules";
 import promptsRouter from "./routes/prompts";
+import runsRouter from "./routes/runs";
 import type { ReviewMeta } from "./stateFile";
 import type { WriteStateFn } from "./index";
 import { type SystemCalls, defaultSystemCalls } from "./system-calls";
@@ -45,6 +46,7 @@ export function buildApp(
   app.use("/api", pipelineRouter);
   app.use("/api", schedulesRouter);
   app.use("/api", promptsRouter);
+  app.use("/api", runsRouter);
 
   return app;
 }
