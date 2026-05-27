@@ -12,9 +12,41 @@ function ensureConfigDir(): void {
   }
 }
 
-export function initDb(): Database.Database {
-  ensureConfigDir();
-  const db = new Database(DB_PATH);
+/** New columns added in migration v1. */
+const MIGRATION_V1_COLUMNS = [
+  { name: "pid", def: "INTEGER" },
+  { name: "launch_type", def: "TEXT" },
+  { name: "terminal_type", def: "TEXT" },
+  { name: "ai_title", def: "TEXT" },
+  { name: "session_id", def: "TEXT" },
+] as const;
+
+/**
+ * Run an idempotent migration that adds new columns to the `runs` table.
+ * SQLite does not support ADD COLUMN IF NOT EXISTS, so we check PRAGMA table_info first.
+ */
+function migrateRunsTable(db: Database.Database): void {
+  const existing = db
+    .prepare("PRAGMA table_info(runs)")
+    .all() as Array<{ name: string }>;
+  const existingNames = new Set(existing.map((col) => col.name));
+
+  for (const col of MIGRATION_V1_COLUMNS) {
+    if (!existingNames.has(col.name)) {
+      db.exec(`ALTER TABLE runs ADD COLUMN ${col.name} ${col.def} DEFAULT NULL`);
+    }
+  }
+}
+
+export function initDb(dbPath?: string): Database.Database {
+  const resolvedPath = dbPath ?? DB_PATH;
+
+  // Only create CONFIG_DIR for the real (non-memory, non-custom) path
+  if (!dbPath) {
+    ensureConfigDir();
+  }
+
+  const db = new Database(resolvedPath);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS project_roots (
@@ -42,6 +74,8 @@ export function initDb(): Database.Database {
       output TEXT
     );
   `);
+
+  migrateRunsTable(db);
 
   return db;
 }

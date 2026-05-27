@@ -1,9 +1,10 @@
 ---
 id: TASK-19
 title: 'DB schema: extend runs table for unified run history'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-27 13:38'
+updated_date: '2026-05-27 14:34'
 labels:
   - backend
   - db
@@ -37,10 +38,10 @@ Write migration that adds columns with DEFAULT NULL so existing rows are untouch
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Migration runs idempotently — no error if columns already exist
-- [ ] #2 All new columns present after migration on a fresh DB
-- [ ] #3 All new columns present after migration on an existing DB with old schema
-- [ ] #4 Existing runs rows unaffected by migration (NULLs filled in for new columns)
-- [ ] #5 Tests: migration on fresh DB, migration on existing DB, idempotency (run twice)
-- [ ] #6 Tests: inserting and querying each new column
+- [x] #1 Migration runs idempotently — no error if columns already exist
+- [x] #2 All new columns present after migration on a fresh DB
+- [x] #3 All new columns present after migration on an existing DB with old schema
+- [x] #4 Existing runs rows unaffected by migration (NULLs filled in for new columns)
+- [x] #5 Tests: migration on fresh DB, migration on existing DB, idempotency (run twice)
+- [x] #6 Tests: inserting and querying each new column
 <!-- AC:END -->
