@@ -3,9 +3,10 @@ id: TASK-27
 title: >-
   Frontend: scheduled task detail — last run summary, recent history, next run
   time, Run Now button
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-27 13:40'
+updated_date: '2026-05-27 15:17'
 labels:
   - frontend
   - ui
@@ -56,15 +57,15 @@ Recent runs:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Last run shown in header with time, status, duration, ai_title
-- [ ] #2 Next run time shown (relative + absolute)
-- [ ] #3 Run Now button present and enabled when no run is currently running
-- [ ] #4 Run Now button disabled and shows spinner when a run is already running
-- [ ] #5 Run Now triggers POST and a new run appears in recent runs list
-- [ ] #6 Recent runs shows last 5 runs for this schedule
-- [ ] #7 'View all runs' links to /runs filtered by schedule_id
-- [ ] #8 Tests: rendering with last run data
-- [ ] #9 Tests: rendering when no runs exist yet ('Never run')
-- [ ] #10 Tests: Run Now disabled state when run is running
-- [ ] #11 Tests: next_run_at formatting (relative time)
+- [x] #1 Last run shown in header with time, status, duration, ai_title
+- [x] #2 Next run time shown (relative + absolute)
+- [x] #3 Run Now button present and enabled when no run is currently running
+- [x] #4 Run Now button disabled and shows spinner when a run is already running
+- [x] #5 Run Now triggers POST and a new run appears in recent runs list
+- [x] #6 Recent runs shows last 5 runs for this schedule
+- [x] #7 'View all runs' links to /runs filtered by schedule_id
+- [x] #8 Tests: rendering with last run data
+- [x] #9 Tests: rendering when no runs exist yet ('Never run')
+- [x] #10 Tests: Run Now disabled state when run is running
+- [x] #11 Tests: next_run_at formatting (relative time)
 <!-- AC:END -->

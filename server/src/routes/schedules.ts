@@ -5,6 +5,47 @@ import { runInteractive, runHeadless } from "../runner";
 
 const router = Router();
 
+function matchField(value: number, expr: string): boolean {
+  if (expr === "*") return true;
+  if (expr.includes(",")) return expr.split(",").some((e) => matchField(value, e.trim()));
+  if (expr.includes("-")) {
+    const [lo, hi] = expr.split("-").map(Number);
+    return value >= lo && value <= hi;
+  }
+  if (expr.includes("/")) {
+    const [base, step] = expr.split("/");
+    const stepNum = parseInt(step, 10);
+    const start = base === "*" ? 0 : parseInt(base, 10);
+    return value >= start && (value - start) % stepNum === 0;
+  }
+  return parseInt(expr, 10) === value;
+}
+
+function computeNextRun(cronExpr: string): string | null {
+  const parts = cronExpr.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [minExpr, hourExpr, domExpr, monthExpr, dowExpr] = parts;
+
+  const now = new Date();
+  const candidate = new Date(now);
+  candidate.setSeconds(0, 0);
+  candidate.setMinutes(candidate.getMinutes() + 1);
+
+  for (let i = 0; i < 10080; i++) {
+    if (
+      matchField(candidate.getMinutes(), minExpr) &&
+      matchField(candidate.getHours(), hourExpr) &&
+      matchField(candidate.getDate(), domExpr) &&
+      matchField(candidate.getMonth() + 1, monthExpr) &&
+      matchField(candidate.getDay(), dowExpr)
+    ) {
+      return candidate.toISOString();
+    }
+    candidate.setMinutes(candidate.getMinutes() + 1);
+  }
+  return null;
+}
+
 interface ScheduleRow {
   id: number;
   name: string;
@@ -23,6 +64,9 @@ interface RunRow {
   finished_at: string | null;
   status: string | null;
   output: string | null;
+  ai_title: string | null;
+  pid: number | null;
+  launch_type: string | null;
 }
 
 /** GET /api/schedules — list all schedules with their latest run */
@@ -34,10 +78,16 @@ router.get("/schedules", (_req: Request, res: Response) => {
     "SELECT * FROM runs WHERE schedule_id = ? ORDER BY id DESC LIMIT 1"
   );
 
+  const isRunningStmt = db.prepare(
+    "SELECT COUNT(*) as cnt FROM runs WHERE schedule_id = ? AND status = 'running'"
+  );
+
   const result = schedules.map((s) => ({
     ...s,
     enabled: s.enabled === 1,
     last_run: (lastRunStmt.get(s.id) as RunRow | undefined) ?? null,
+    next_run_at: computeNextRun(s.cron),
+    is_running: ((isRunningStmt.get(s.id) as { cnt: number }).cnt) > 0,
   }));
 
   res.json(result);
@@ -162,8 +212,12 @@ router.get("/schedules/:id/runs", (req: Request, res: Response) => {
   }
 
   const runs = db.prepare(
-    "SELECT * FROM runs WHERE schedule_id = ? ORDER BY id DESC"
-  ).all(id) as RunRow[];
+    `SELECT *,
+      CASE WHEN finished_at IS NOT NULL
+        THEN CAST((julianday(finished_at) - julianday(started_at)) * 86400000 AS INTEGER)
+        ELSE NULL END AS duration_ms
+     FROM runs WHERE schedule_id = ? ORDER BY id DESC LIMIT 10`
+  ).all(id) as (RunRow & { duration_ms: number | null })[];
 
   res.json(runs);
 });

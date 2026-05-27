@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Link } from "react-router-dom";
 
 // ----------------------------------------------------------------
 // Types
@@ -11,6 +12,10 @@ interface RunRow {
   finished_at: string | null;
   status: string | null;
   output: string | null;
+  ai_title: string | null;
+  duration_ms: number | null;
+  pid?: number | null;
+  launch_type?: string | null;
 }
 
 interface Schedule {
@@ -23,6 +28,8 @@ interface Schedule {
   enabled: boolean;
   created_at: string;
   last_run: RunRow | null;
+  next_run_at: string | null;
+  is_running: boolean;
 }
 
 interface Project {
@@ -140,6 +147,43 @@ function defaultDate(): string {
 
 function defaultTime(): string {
   return "02:30";
+}
+
+function formatNextRun(nextRunAt: string | null): string {
+  if (!nextRunAt) return "Unknown";
+  const next = new Date(nextRunAt);
+  const now = new Date();
+  const diffMs = next.getTime() - now.getTime();
+  const diffH = Math.floor(diffMs / 3600000);
+  const diffM = Math.floor((diffMs % 3600000) / 60000);
+
+  const isToday = next.toDateString() === now.toDateString();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const isTomorrow = next.toDateString() === tomorrow.toDateString();
+
+  const timeStr = next.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const relStr = diffH > 0 ? `in ${diffH}h ${diffM}m` : `in ${diffM}m`;
+
+  let dayStr: string;
+  if (isToday) dayStr = `today ${timeStr}`;
+  else if (isTomorrow) dayStr = `tomorrow ${timeStr}`;
+  else dayStr = `${next.toLocaleDateString()} ${timeStr}`;
+
+  return `${dayStr} (${relStr})`;
+}
+
+function fmtRunDuration(durationMs: number | null, startedAt: string, finishedAt: string | null): string {
+  if (finishedAt === null) {
+    return fmtDuration(startedAt, null);
+  }
+  if (durationMs !== null) {
+    const s = Math.floor(durationMs / 1000);
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    return m > 0 ? `${m}m ${rem}s` : `${s}s`;
+  }
+  return fmtDuration(startedAt, finishedAt);
 }
 
 // ----------------------------------------------------------------
@@ -488,19 +532,35 @@ function ScheduleCard({ schedule, isOpen, onToggle, onOpenRun, onToggleEnabled, 
             <>
               <span className="run-status-dot" style={{ background: lastRunMeta.color }} />
               <span style={{ color: lastRunMeta.color, fontSize: 12 }}>{lastRunMeta.label}</span>
+              {lastRun!.finished_at && (
+                <span style={{ fontSize: 11, color: "#57606a", marginLeft: 4 }}>
+                  {fmtDuration(lastRun!.started_at, lastRun!.finished_at)}
+                </span>
+              )}
+              {lastRun!.ai_title && (
+                <span style={{ fontSize: 11, color: "#57606a", marginLeft: 4 }}>
+                  "{lastRun!.ai_title}"
+                </span>
+              )}
             </>
           ) : (
-            <span className="schedule-no-runs">No runs yet</span>
+            <span className="schedule-no-runs" data-testid="never-run">Never run</span>
           )}
         </div>
+        {schedule.enabled && schedule.next_run_at && (
+          <div style={{ fontSize: 11, color: "#57606a", marginRight: 8 }} data-testid="next-run-time">
+            Next: {formatNextRun(schedule.next_run_at)}
+          </div>
+        )}
         <button
           className="btn"
           style={{ fontSize: 12, padding: "2px 10px", marginRight: 4 }}
           onClick={handleRunNow}
-          disabled={running}
+          disabled={running || schedule.is_running}
           title="Run now"
+          data-testid="run-now-btn"
         >
-          {running ? "…" : "▶ Run now"}
+          {(running || schedule.is_running) ? "…" : "▶ Run now"}
         </button>
         <button
           className="btn"
@@ -550,32 +610,43 @@ function ScheduleCard({ schedule, isOpen, onToggle, onOpenRun, onToggleEnabled, 
             ) : runs.length === 0 ? (
               <div className="empty-state">No runs yet.</div>
             ) : (
-              <div className="run-table">
-                <div className="run-table-header">
-                  <span className="rt-col-when">When</span>
-                  <span className="rt-col-status">Status</span>
-                  <span className="rt-col-dur">Duration</span>
-                  <span className="rt-col-out">Output</span>
+              <>
+                <div className="run-table">
+                  <div className="run-table-header">
+                    <span className="rt-col-when">When</span>
+                    <span className="rt-col-status">Status</span>
+                    <span className="rt-col-dur">Duration</span>
+                    <span className="rt-col-out">Output</span>
+                  </div>
+                  {runs.slice(0, 5).map((run) => {
+                    const rm = runStatusMeta(run.status);
+                    return (
+                      <button
+                        key={run.id}
+                        className="run-table-row"
+                        onClick={() => onOpenRun(run)}
+                      >
+                        <span className="rt-col-when mono">{fmtAbs(run.started_at)}</span>
+                        <span className="rt-col-status">
+                          <span className="run-status-dot" style={{ background: rm.color }} />
+                          <span style={{ color: rm.color }}>{rm.label}</span>
+                        </span>
+                        <span className="rt-col-dur mono">{fmtRunDuration(run.duration_ms, run.started_at, run.finished_at)}</span>
+                        <span className="rt-col-out">
+                          {run.ai_title ? (
+                            <span style={{ fontStyle: "italic" }}>{truncate(run.ai_title, 48)}</span>
+                          ) : (
+                            truncate(firstLine(run.output), 64)
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-                {runs.map((run) => {
-                  const rm = runStatusMeta(run.status);
-                  return (
-                    <button
-                      key={run.id}
-                      className="run-table-row"
-                      onClick={() => onOpenRun(run)}
-                    >
-                      <span className="rt-col-when mono">{fmtAbs(run.started_at)}</span>
-                      <span className="rt-col-status">
-                        <span className="run-status-dot" style={{ background: rm.color }} />
-                        <span style={{ color: rm.color }}>{rm.label}</span>
-                      </span>
-                      <span className="rt-col-dur mono">{fmtDuration(run.started_at, run.finished_at)}</span>
-                      <span className="rt-col-out">{truncate(firstLine(run.output), 64)}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                <div style={{ marginTop: 8 }}>
+                  <Link to="/runs" data-testid="view-all-runs-link">View all runs →</Link>
+                </div>
+              </>
             )}
           </div>
         </div>
