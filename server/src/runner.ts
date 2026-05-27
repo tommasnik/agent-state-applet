@@ -11,11 +11,11 @@ function insertRun(scheduleId: number, launchType: 'scheduled' | 'manual_trigger
   return result.lastInsertRowid as number;
 }
 
-function finalizeRun(runId: number, status: "success" | "failed", output: string): void {
+function finalizeRun(runId: number, status: "success" | "failed", output: string, aiTitle?: string): void {
   const db = getDb();
   db.prepare(
-    "UPDATE runs SET finished_at = datetime('now'), status = ?, output = ? WHERE id = ?"
-  ).run(status, output, runId);
+    "UPDATE runs SET finished_at = datetime('now'), status = ?, output = ?, ai_title = COALESCE(ai_title, ?) WHERE id = ?"
+  ).run(status, output, aiTitle ?? null, runId);
 }
 
 /**

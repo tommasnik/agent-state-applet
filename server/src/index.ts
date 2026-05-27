@@ -16,7 +16,7 @@ import {
 import { createWsServer, broadcastState } from "./ws";
 import { initDb, getDb } from "./db";
 import { schedulerInit } from "./scheduler";
-import { cleanupStaleRuns } from "./runs";
+import { cleanupStaleRuns, closeRun } from "./runs";
 import { buildApp } from "./app";
 
 const HOST = "127.0.0.1";
@@ -74,6 +74,11 @@ function startPidChecker(): void {
 
     for (const pid of store.pids()) {
       if (!pidAlive(pid)) {
+        const agent = store.get(pid);
+        // Only close run for root agents — subagents have parent_session_id set
+        if (!agent?.parent_session_id) {
+          closeRun(parseInt(pid, 10), "failed", agent?.ai_title || undefined);
+        }
         store.remove(pid);
         changed = true;
         continue;

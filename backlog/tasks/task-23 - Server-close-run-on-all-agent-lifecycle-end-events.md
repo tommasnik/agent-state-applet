@@ -1,9 +1,10 @@
 ---
 id: TASK-23
 title: 'Server: close run on all agent lifecycle end events'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-27 13:39'
+updated_date: '2026-05-27 14:52'
 labels:
   - backend
   - server
@@ -44,14 +45,14 @@ If a run is already `success`/`failed`/`cancelled`, ignore subsequent close atte
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Stop hook closes run with status=success and writes ai_title
-- [ ] #2 /clear (TTY recycle) closes previous run as cancelled before opening new one
-- [ ] #3 SIGKILL of main process closes run as failed (detected by pid_checker)
-- [ ] #4 Killing a subagent PID does not close the parent run
-- [ ] #5 Server restart closes all open runs with dead PIDs as failed (tested via TASK-22)
-- [ ] #6 Double-close is idempotent — second close is a no-op
-- [ ] #7 Headless success already closes as success — test that ai_title is written
-- [ ] #8 Tests: each scenario above has a dedicated test case
-- [ ] #9 Tests: ai_title present in DB after successful close
-- [ ] #10 Tests: timing — finished_at - started_at = realistic duration (not zero, not negative)
+- [x] #1 Stop hook closes run with status=success and writes ai_title
+- [x] #2 /clear (TTY recycle) closes previous run as cancelled before opening new one
+- [x] #3 SIGKILL of main process closes run as failed (detected by pid_checker)
+- [x] #4 Killing a subagent PID does not close the parent run
+- [x] #5 Server restart closes all open runs with dead PIDs as failed (tested via TASK-22)
+- [x] #6 Double-close is idempotent — second close is a no-op
+- [x] #7 Headless success already closes as success — test that ai_title is written
+- [x] #8 Tests: each scenario above has a dedicated test case
+- [x] #9 Tests: ai_title present in DB after successful close
+- [x] #10 Tests: timing — finished_at - started_at = realistic duration (not zero, not negative)
 <!-- AC:END -->

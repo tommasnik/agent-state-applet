@@ -19,6 +19,7 @@ const MIGRATION_V1_COLUMNS = [
   { name: "terminal_type", def: "TEXT" },
   { name: "ai_title", def: "TEXT" },
   { name: "session_id", def: "TEXT" },
+  { name: "tty", def: "TEXT" },
 ] as const;
 
 /**
