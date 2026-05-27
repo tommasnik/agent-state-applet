@@ -142,10 +142,10 @@ router.post("/schedules/:id/run", (req: Request, res: Response) => {
   }
 
   if (schedule.type === "interactive") {
-    const runId = runInteractive(schedule.id, schedule.project_path, schedule.prompt);
+    const runId = runInteractive(schedule.id, schedule.project_path, schedule.prompt, 'manual_trigger');
     res.json({ runId, type: "interactive" });
   } else {
-    runHeadless(schedule.id, schedule.project_path, schedule.prompt);
+    runHeadless(schedule.id, schedule.project_path, schedule.prompt, 'manual_trigger');
     res.json({ type: "headless", message: "Run started, output streamed via WebSocket" });
   }
 });

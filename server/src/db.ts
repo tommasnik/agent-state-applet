@@ -89,4 +89,9 @@ export function getDb(): Database.Database {
   return _db;
 }
 
+/** Override the singleton for tests. Call with an in-memory DB before each test. */
+export function setTestDb(db: Database.Database): void {
+  _db = db;
+}
+
 export default getDb;

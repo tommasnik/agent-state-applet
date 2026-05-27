@@ -16,9 +16,9 @@ const tasks = new Map<number, cron.ScheduledTask>();
 
 function executeSchedule(schedule: Schedule): void {
   if (schedule.type === "interactive") {
-    runInteractive(schedule.id, schedule.project_path, schedule.prompt);
+    runInteractive(schedule.id, schedule.project_path, schedule.prompt, 'scheduled');
   } else {
-    runHeadless(schedule.id, schedule.project_path, schedule.prompt);
+    runHeadless(schedule.id, schedule.project_path, schedule.prompt, 'scheduled');
   }
 }
 

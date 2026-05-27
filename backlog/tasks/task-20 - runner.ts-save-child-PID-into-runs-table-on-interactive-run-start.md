@@ -1,9 +1,10 @@
 ---
 id: TASK-20
 title: 'runner.ts: save child PID into runs table on interactive run start'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-27 13:38'
+updated_date: '2026-05-27 14:38'
 labels:
   - backend
   - scheduler
@@ -26,11 +27,11 @@ Also pass `SCHEDULE_ID` env var to the child process so the hook can detect it a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 After runInteractive() spawns child, runs.pid = child.pid
-- [ ] #2 launch_type = 'scheduled' for cron-triggered runs
-- [ ] #3 launch_type = 'manual_trigger' for Run Now triggered runs
-- [ ] #4 SCHEDULE_ID env var is set on child process
-- [ ] #5 Tests: verify PID written to DB after spawn
-- [ ] #6 Tests: verify SCHEDULE_ID present in child env
-- [ ] #7 Tests: launch_type distinction between cron and manual_trigger
+- [x] #1 After runInteractive() spawns child, runs.pid = child.pid
+- [x] #2 launch_type = 'scheduled' for cron-triggered runs
+- [x] #3 launch_type = 'manual_trigger' for Run Now triggered runs
+- [x] #4 SCHEDULE_ID env var is set on child process
+- [x] #5 Tests: verify PID written to DB after spawn
+- [x] #6 Tests: verify SCHEDULE_ID present in child env
+- [x] #7 Tests: launch_type distinction between cron and manual_trigger
 <!-- AC:END -->

@@ -2,12 +2,12 @@ import { spawn } from "child_process";
 import { getDb } from "./db";
 import { broadcast } from "./ws";
 
-function insertRun(scheduleId: number): number {
+function insertRun(scheduleId: number, launchType: 'scheduled' | 'manual_trigger'): number {
   const db = getDb();
   const stmt = db.prepare(
-    "INSERT INTO runs (schedule_id, started_at, status) VALUES (?, datetime('now'), 'running')"
+    "INSERT INTO runs (schedule_id, started_at, status, launch_type) VALUES (?, datetime('now'), 'running', ?)"
   );
-  const result = stmt.run(scheduleId);
+  const result = stmt.run(scheduleId, launchType);
   return result.lastInsertRowid as number;
 }
 
@@ -25,9 +25,10 @@ function finalizeRun(runId: number, status: "success" | "failed", output: string
 export function runInteractive(
   scheduleId: number,
   projectPath: string,
-  prompt: string
+  prompt: string,
+  launchType: 'scheduled' | 'manual_trigger' = 'scheduled'
 ): number {
-  const runId = insertRun(scheduleId);
+  const runId = insertRun(scheduleId, launchType);
 
   const escapedPath = projectPath.replace(/'/g, "'\\''");
   const escapedPrompt = prompt.replace(/'/g, "'\\''");
@@ -35,8 +36,18 @@ export function runInteractive(
   const child = spawn(
     "ghostty",
     [`--working-directory=${projectPath}`, "-e", "bash", "-lic", `cd '${escapedPath}' && claude '${escapedPrompt}' ; exec bash`],
-    { detached: true, stdio: "ignore", env: { ...process.env, DISPLAY: display } }
+    {
+      detached: true,
+      stdio: "ignore",
+      env: { ...process.env, DISPLAY: display, SCHEDULE_ID: scheduleId.toString() },
+    }
   );
+
+  // Write child PID to DB immediately after spawn
+  if (child.pid !== undefined) {
+    getDb().prepare("UPDATE runs SET pid = ? WHERE id = ?").run(child.pid, runId);
+  }
+
   child.on("error", (err) => {
     console.error(`[runner] ghostty launch failed: ${err.message}`);
     finalizeRun(runId, "failed", `Launch failed: ${err.message}`);
@@ -79,9 +90,10 @@ export function runInteractiveAnon(projectPath: string, prompt: string): number 
 export function runHeadless(
   scheduleId: number,
   projectPath: string,
-  prompt: string
+  prompt: string,
+  launchType: 'scheduled' | 'manual_trigger' = 'scheduled'
 ): void {
-  const runId = insertRun(scheduleId);
+  const runId = insertRun(scheduleId, launchType);
 
   const proc = spawn("claude", ["--print", prompt], {
     cwd: projectPath,
