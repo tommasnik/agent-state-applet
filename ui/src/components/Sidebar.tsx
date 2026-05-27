@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: "/schedules", label: "Schedules" },
   { to: "/projects", label: "Projects" },
   { to: "/prompts", label: "Prompts" },
+  { to: "/runs", label: "Runs" },
 ];
 
 export function Sidebar() {

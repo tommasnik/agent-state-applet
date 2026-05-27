@@ -4,6 +4,7 @@ import { AgentsPage } from "./pages/AgentsPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { PromptsPage } from "./pages/PromptsPage";
+import { RunsPage } from "./pages/RunsPage";
 import { useAgents } from "./hooks/useAgents";
 import { AgentsContext } from "./store/agents";
 import "./app.css";
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="schedules" element={<SchedulesPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="prompts" element={<PromptsPage />} />
+          <Route path="runs" element={<RunsPage />} />
         </Route>
       </Routes>
     </AgentsContext.Provider>

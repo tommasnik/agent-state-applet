@@ -1,9 +1,10 @@
 ---
 id: TASK-25
 title: 'Frontend: /runs — global run history page with filters'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-27 13:40'
+updated_date: '2026-05-27 15:10'
 labels:
   - frontend
   - ui
@@ -47,18 +48,18 @@ All Runs                [Project ▼] [Type ▼] [Status ▼] [Date range ▼]
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Page renders with all runs from GET /api/runs
-- [ ] #2 Project filter works — selecting a project filters the table
-- [ ] #3 Type filter works (scheduled / manual / manual_trigger)
-- [ ] #4 Status filter works
-- [ ] #5 Date range filter works
-- [ ] #6 Clicking project name in table sets project filter
-- [ ] #7 Clicking scheduled TYPE badge navigates to /schedules/:id
-- [ ] #8 Pagination: prev/next work, correct page count shown
-- [ ] #9 Running sessions show 'running' badge with live duration (ticking or on load)
-- [ ] #10 Empty state shown when no runs match filters
-- [ ] #11 Tests: rendering with mocked API response
-- [ ] #12 Tests: each filter interaction
-- [ ] #13 Tests: empty state rendering
-- [ ] #14 Tests: status badge color mapping
+- [x] #1 Page renders with all runs from GET /api/runs
+- [x] #2 Project filter works — selecting a project filters the table
+- [x] #3 Type filter works (scheduled / manual / manual_trigger)
+- [x] #4 Status filter works
+- [x] #5 Date range filter works
+- [x] #6 Clicking project name in table sets project filter
+- [x] #7 Clicking scheduled TYPE badge navigates to /schedules/:id
+- [x] #8 Pagination: prev/next work, correct page count shown
+- [x] #9 Running sessions show 'running' badge with live duration (ticking or on load)
+- [x] #10 Empty state shown when no runs match filters
+- [x] #11 Tests: rendering with mocked API response
+- [x] #12 Tests: each filter interaction
+- [x] #13 Tests: empty state rendering
+- [x] #14 Tests: status badge color mapping
 <!-- AC:END -->
