@@ -12,9 +12,9 @@ const router = Router();
 // Prompt constants for backlog implementation actions
 // ----------------------------------------------------------------
 
-export const PROMPT_IMPLEMENT_ALL = `/start-implementing-tasks`;
-export const PROMPT_IMPLEMENT_NEXT = `/implement-here implementuj první To Do task z backlogu`;
-export const PROMPT_IMPLEMENT_TASK = `/implement-here implementuj task {{taskId}} z backlogu`;
+export const PROMPT_IMPLEMENT_ALL = `/start-implementing-tasks {{subProject}}`;
+export const PROMPT_IMPLEMENT_NEXT = `/implement-here implementuj další To Do task z backlogu {{subProject}}`;
+export const PROMPT_IMPLEMENT_TASK = `/implement-here implementuj task {{taskId}} z backlogu {{subProject}}`;
 
 // ----------------------------------------------------------------
 // Helpers
@@ -239,7 +239,9 @@ router.post("/projects/:encodedPath/implement-all", (req: Request, res: Response
     res.status(403).json({ error: "Access denied" });
     return;
   }
-  const runId = runInteractiveAnon(projectPath, PROMPT_IMPLEMENT_ALL);
+  const subProject = (req.body as { subProject?: string }).subProject ?? "";
+  const prompt = PROMPT_IMPLEMENT_ALL.replace("{{subProject}}", subProject).trimEnd();
+  const runId = runInteractiveAnon(projectPath, prompt);
   res.json({ ok: true, runId });
 });
 
@@ -253,7 +255,9 @@ router.post("/projects/:encodedPath/implement-next", (req: Request, res: Respons
     res.status(403).json({ error: "Access denied" });
     return;
   }
-  const runId = runInteractiveAnon(projectPath, PROMPT_IMPLEMENT_NEXT);
+  const subProject = (req.body as { subProject?: string }).subProject ?? "";
+  const prompt = PROMPT_IMPLEMENT_NEXT.replace("{{subProject}}", subProject).trimEnd();
+  const runId = runInteractiveAnon(projectPath, prompt);
   res.json({ ok: true, runId });
 });
 
@@ -268,7 +272,11 @@ router.post("/projects/:encodedPath/implement/:taskId", (req: Request, res: Resp
     return;
   }
   const { taskId } = req.params;
-  const prompt = PROMPT_IMPLEMENT_TASK.replace("{{taskId}}", taskId);
+  const subProject = (req.body as { subProject?: string }).subProject ?? "";
+  const prompt = PROMPT_IMPLEMENT_TASK
+    .replace("{{taskId}}", taskId)
+    .replace("{{subProject}}", subProject)
+    .trimEnd();
   const runId = runInteractiveAnon(projectPath, prompt);
   res.json({ ok: true, runId });
 });

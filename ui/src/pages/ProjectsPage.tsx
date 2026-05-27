@@ -167,11 +167,12 @@ function parseBacklogFiles(files: BacklogFile[]): ParsedTask[] {
 
 interface TaskDetailModalProps {
   task: ParsedTask;
-  subProjectPath: string;
+  rootProjectPath: string;
+  subProjectName: string;
   onClose: () => void;
 }
 
-function TaskDetailModal({ task, subProjectPath, onClose }: TaskDetailModalProps) {
+function TaskDetailModal({ task, rootProjectPath, subProjectName, onClose }: TaskDetailModalProps) {
   const [running, setRunning] = useState(false);
 
   const handleBackdrop = useCallback(
@@ -182,14 +183,16 @@ function TaskDetailModal({ task, subProjectPath, onClose }: TaskDetailModalProps
   const handleImplement = useCallback(async () => {
     setRunning(true);
     try {
-      await fetch(`/api/projects/${encodePath(subProjectPath)}/implement/${task.id}`, {
+      await fetch(`/api/projects/${encodePath(rootProjectPath)}/implement/${task.id}`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subProject: subProjectName }),
       });
       onClose();
     } catch {/* ignore */} finally {
       setRunning(false);
     }
-  }, [task.id, subProjectPath, onClose]);
+  }, [task.id, rootProjectPath, subProjectName, onClose]);
 
   return (
     <div className="modal-backdrop" onClick={handleBackdrop}>
@@ -223,28 +226,38 @@ function TaskDetailModal({ task, subProjectPath, onClose }: TaskDetailModalProps
 
 interface SubProjectDetailProps {
   subProject: SubProject;
+  rootProjectPath: string;
 }
 
-function SubProjectDetail({ subProject }: SubProjectDetailProps) {
-  const encoded = encodePath(subProject.path);
+function SubProjectDetail({ subProject, rootProjectPath }: SubProjectDetailProps) {
+  const encodedSub = encodePath(subProject.path);
+  const encodedRoot = encodePath(rootProjectPath);
   const [tasks, setTasks] = useState<ParsedTask[] | null>(null);
   const [selectedTask, setSelectedTask] = useState<ParsedTask | null>(null);
 
   useEffect(() => {
     setTasks(null);
-    fetch(`/api/projects/${encoded}/backlog`)
+    fetch(`/api/projects/${encodedSub}/backlog`)
       .then((r) => r.json())
       .then((data: { files: BacklogFile[] }) => setTasks(parseBacklogFiles(data.files)))
       .catch(() => setTasks([]));
-  }, [encoded]);
+  }, [encodedSub]);
 
   const handleImplementAll = useCallback(() => {
-    fetch(`/api/projects/${encoded}/implement-all`, { method: "POST" }).catch(() => {/* ignore */});
-  }, [encoded]);
+    fetch(`/api/projects/${encodedRoot}/implement-all`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subProject: subProject.name }),
+    }).catch(() => {/* ignore */});
+  }, [encodedRoot, subProject.name]);
 
   const handleImplementNext = useCallback(() => {
-    fetch(`/api/projects/${encoded}/implement-next`, { method: "POST" }).catch(() => {/* ignore */});
-  }, [encoded]);
+    fetch(`/api/projects/${encodedRoot}/implement-next`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subProject: subProject.name }),
+    }).catch(() => {/* ignore */});
+  }, [encodedRoot, subProject.name]);
 
   return (
     <div className="pd-container">
@@ -313,7 +326,8 @@ function SubProjectDetail({ subProject }: SubProjectDetailProps) {
       {selectedTask && (
         <TaskDetailModal
           task={selectedTask}
-          subProjectPath={subProject.path}
+          rootProjectPath={rootProjectPath}
+          subProjectName={subProject.name}
           onClose={() => setSelectedTask(null)}
         />
       )}
@@ -400,10 +414,12 @@ function AgentTerminalModal({ agent, onClose }: ModalProps) {
 interface ProjectDetailProps {
   project: Project;
   agents: Agent[];
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
   onOpenAgent: (agent: Agent) => void;
 }
 
-function ProjectDetail({ project, agents, onOpenAgent }: ProjectDetailProps) {
+function ProjectDetail({ project, agents, isFavorite, onToggleFavorite, onOpenAgent }: ProjectDetailProps) {
   const encoded = encodePath(project.path);
   const color = projectColor(project.path);
 
@@ -494,7 +510,17 @@ function ProjectDetail({ project, agents, onOpenAgent }: ProjectDetailProps) {
       <header className="pd-head">
         <div className="pd-mark" style={{ background: color }} />
         <div className="pd-meta">
-          <h2 className="pd-name">{project.name}</h2>
+          <h2 className="pd-name">
+            {project.name}
+            <button
+              className={`pd-star-btn${isFavorite ? " pd-star-btn--active" : ""}`}
+              onClick={onToggleFavorite}
+              aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+              title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+            >
+              {isFavorite ? "★" : "☆"}
+            </button>
+          </h2>
           <div className="pd-path"><code>{project.path}</code></div>
           <div className="pd-flags">
             {project.hasClaudeMd && <span className="pd-flag">CLAUDE.md</span>}
@@ -678,6 +704,25 @@ export function ProjectsPage() {
   const [openAgent, setOpenAgent] = useState<Agent | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem("agent-applet-favorites");
+      return new Set(stored ? JSON.parse(stored) : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  const toggleFavorite = useCallback((path: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      localStorage.setItem("agent-applet-favorites", JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
   // Sidebar pipeline badges: Map of projectPath → PipelineData | null
   const [sidebarPipelines, setSidebarPipelines] = useState<Map<string, PipelineData | null>>(new Map());
 
@@ -819,130 +864,169 @@ export function ProjectsPage() {
     [agentList, selected]
   );
 
+  const favoriteProjects = useMemo(
+    () => projects.filter((p) => favorites.has(p.path)),
+    [projects, favorites]
+  );
+
+  const activeProjects = useMemo(
+    () => projects.filter((p) =>
+      agentList.some(
+        (a) => a.project_root === p.path &&
+          (WORKING_STATES.has(a.state) || NEEDS_INPUT_STATES.has(a.state))
+      )
+    ),
+    [projects, agentList]
+  );
+
+  function renderProjectRow(p: Project) {
+    const counts = projectCounts(p.path);
+    return (
+      <div key={p.path}>
+        <button
+          className={`pm-row ${p.path === selectedPath && !selectedSubPath ? "active" : ""}`}
+          onClick={() => { setSelectedPath(p.path); setSelectedSubPath(null); }}
+        >
+          <span className="pm-mark" style={{ background: projectColor(p.path) }} />
+          <span className="pm-name">{p.name}</span>
+          <span className="pm-counts">
+            {counts.needs > 0 && (
+              <span className="pm-pip pm-pip-needs" title="Needs input">{counts.needs}</span>
+            )}
+            {counts.working > 0 && (
+              <span className="pm-pip pm-pip-working" title="Working">{counts.working}</span>
+            )}
+            {(() => {
+              const pip = sidebarPipelines.get(p.path);
+              if (!pip) return null;
+              return (
+                <span
+                  className="pm-pip pm-pip-pipeline"
+                  style={{ background: pipelineColor(pip.status) }}
+                  title={`Pipeline: ${pip.status}`}
+                />
+              );
+            })()}
+          </span>
+        </button>
+        {p.subProjects?.map((sp) => (
+          <button
+            key={sp.path}
+            className={`pm-row pm-row-sub ${selectedSubPath === sp.path ? "active" : ""}`}
+            onClick={() => { setSelectedPath(p.path); setSelectedSubPath(sp.path); }}
+          >
+            <span className="pm-sub-indent" />
+            <span className="pm-name">{sp.name}</span>
+            <span className="pm-pip pm-pip-backlog">BL</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="projects-page">
       {/* Left panel */}
       <aside className="projects-master">
         <div className="projects-master-head">
           Projects <span className="section-count">{projects.length}</span>
-          <button
-            className={`pm-settings-btn ${showRootsPanel ? "active" : ""}`}
-            onClick={() => setShowRootsPanel((v) => !v)}
-            aria-label="Project roots settings"
-            title="Project roots"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-          </button>
         </div>
 
-        {showRootsPanel && config && (
-          <div className="pm-roots-panel">
-            <div className="pm-roots-panel-title">Project roots</div>
-            <div className="pd-roots-list">
-              {config.projectRoots.map((root) => (
-                <div key={root} className="pd-root-row">
-                  <code className="pd-root-path">{root}</code>
-                  <button
-                    className="pd-root-remove"
-                    onClick={() => handleRemoveRoot(root)}
-                    disabled={savingConfig}
-                    aria-label={`Remove ${root}`}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              {config.projectRoots.length === 0 && (
-                <div className="empty-state" style={{ padding: "4px 0" }}>No roots configured.</div>
-              )}
+        <div className="projects-master-list">
+          {/* Favorites */}
+          {favoriteProjects.length > 0 && (
+            <div className="pm-section">
+              <div className="pm-section-head">Favorites</div>
+              {favoriteProjects.map((p) => renderProjectRow(p))}
             </div>
-            <div className="pd-roots-add">
-              <input
-                className="field-input pd-roots-input"
-                value={newRoot}
-                onChange={(e) => setNewRoot(e.target.value)}
-                placeholder="/home/user/code"
-                onKeyDown={(e) => { if (e.key === "Enter") handleAddRoot(); }}
-              />
+          )}
+
+          {/* Active */}
+          {activeProjects.length > 0 && (
+            <div className="pm-section">
+              <div className="pm-section-head">Active</div>
+              {activeProjects.map((p) => renderProjectRow(p))}
+            </div>
+          )}
+
+          {/* All Projects */}
+          <div className="pm-section">
+            <div className="pm-section-head pm-section-head-row">
+              All Projects
               <button
-                className="btn btn-primary"
-                onClick={handleAddRoot}
-                disabled={savingConfig || !newRoot.trim()}
+                className={`pm-settings-btn ${showRootsPanel ? "active" : ""}`}
+                onClick={() => setShowRootsPanel((v) => !v)}
+                aria-label="Project roots settings"
+                title="Project roots"
               >
-                Add
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
               </button>
             </div>
-          </div>
-        )}
 
-        <div className="projects-master-list">
-          {groupedProjects.map(([parent, groupProjects]) => {
-            const collapsed = collapsedGroups.has(parent);
-            return (
-              <div key={parent} className="pm-group">
-                {groupedProjects.length > 1 && (
-                  <button
-                    className="pm-group-head"
-                    title={parent}
-                    onClick={() => toggleGroup(parent)}
-                  >
-                    <span className={`pm-group-arrow ${collapsed ? "collapsed" : ""}`}>▾</span>
-                    {toTildePath(parent)}
-                  </button>
-                )}
-                {!collapsed && groupProjects.map((p) => {
-                  const counts = projectCounts(p.path);
-                  return (
-                    <div key={p.path}>
+            {showRootsPanel && config && (
+              <div className="pm-roots-panel">
+                <div className="pd-roots-list">
+                  {config.projectRoots.map((root) => (
+                    <div key={root} className="pd-root-row">
+                      <code className="pd-root-path">{root}</code>
                       <button
-                        className={`pm-row ${p.path === selectedPath && !selectedSubPath ? "active" : ""}`}
-                        onClick={() => { setSelectedPath(p.path); setSelectedSubPath(null); }}
+                        className="pd-root-remove"
+                        onClick={() => handleRemoveRoot(root)}
+                        disabled={savingConfig}
+                        aria-label={`Remove ${root}`}
                       >
-                        <span className="pm-mark" style={{ background: projectColor(p.path) }} />
-                        <span className="pm-name">{p.name}</span>
-                        <span className="pm-counts">
-                          {counts.needs > 0 && (
-                            <span className="pm-pip pm-pip-needs" title="Needs input">{counts.needs}</span>
-                          )}
-                          {counts.working > 0 && (
-                            <span className="pm-pip pm-pip-working" title="Working">{counts.working}</span>
-                          )}
-                          {(() => {
-                            const pip = sidebarPipelines.get(p.path);
-                            if (!pip) return null;
-                            return (
-                              <span
-                                className="pm-pip pm-pip-pipeline"
-                                style={{ background: pipelineColor(pip.status) }}
-                                title={`Pipeline: ${pip.status}`}
-                              />
-                            );
-                          })()}
-                        </span>
+                        ×
                       </button>
-                      {p.subProjects?.map((sp) => (
-                        <button
-                          key={sp.path}
-                          className={`pm-row pm-row-sub ${selectedSubPath === sp.path ? "active" : ""}`}
-                          onClick={() => { setSelectedPath(p.path); setSelectedSubPath(sp.path); }}
-                        >
-                          <span className="pm-sub-indent" />
-                          <span className="pm-name">{sp.name}</span>
-                          <span className="pm-pip pm-pip-backlog">BL</span>
-                        </button>
-                      ))}
                     </div>
-                  );
-                })}
+                  ))}
+                  {config.projectRoots.length === 0 && (
+                    <div className="empty-state" style={{ padding: "4px 0" }}>No roots configured.</div>
+                  )}
+                </div>
+                <div className="pd-roots-add">
+                  <input
+                    className="field-input pd-roots-input"
+                    value={newRoot}
+                    onChange={(e) => setNewRoot(e.target.value)}
+                    placeholder="/home/user/code"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAddRoot(); }}
+                  />
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleAddRoot}
+                    disabled={savingConfig || !newRoot.trim()}
+                  >
+                    Add
+                  </button>
+                </div>
               </div>
-            );
-          })}
-          {projects.length === 0 && (
-            <div className="pm-empty">No projects found.</div>
-          )}
+            )}
+
+            {groupedProjects.map(([parent, groupProjects]) => {
+              const collapsed = collapsedGroups.has(parent);
+              return (
+                <div key={parent} className="pm-group">
+                  {groupedProjects.length > 1 && (
+                    <button
+                      className="pm-group-head"
+                      title={parent}
+                      onClick={() => toggleGroup(parent)}
+                    >
+                      <span className={`pm-group-arrow ${collapsed ? "collapsed" : ""}`}>▾</span>
+                      {toTildePath(parent)}
+                    </button>
+                  )}
+                  {!collapsed && groupProjects.map((p) => renderProjectRow(p))}
+                </div>
+              );
+            })}
+            {projects.length === 0 && (
+              <div className="pm-empty">No projects found.</div>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -952,12 +1036,15 @@ export function ProjectsPage() {
           <SubProjectDetail
             key={selectedSub.path}
             subProject={selectedSub}
+            rootProjectPath={selected!.path}
           />
         ) : selected ? (
           <ProjectDetail
             key={selected.path}
             project={selected}
             agents={selectedAgents}
+            isFavorite={favorites.has(selected.path)}
+            onToggleFavorite={() => toggleFavorite(selected.path)}
             onOpenAgent={(a) => setOpenAgent(a)}
           />
         ) : (

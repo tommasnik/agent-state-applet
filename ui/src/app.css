@@ -988,6 +988,32 @@
   padding-top: 4px;
 }
 
+.pm-section {
+  padding-bottom: 4px;
+}
+
+.pm-section + .pm-section {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.pm-section-head {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.pm-section-head-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .pm-group-head {
   display: flex;
   align-items: center;
@@ -1143,6 +1169,29 @@
   font-size: 16px;
   font-weight: 600;
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pd-star-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  color: var(--text-muted);
+  transition: color 0.1s;
+  flex-shrink: 0;
+}
+
+.pd-star-btn:hover {
+  color: #f0c040;
+}
+
+.pd-star-btn--active {
+  color: #f0c040;
 }
 
 .pd-path {

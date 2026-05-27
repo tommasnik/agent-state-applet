@@ -1,10 +1,10 @@
 ---
 id: TASK-17
 title: Pipeline status — rozšíření o GitHub Actions (gh CLI)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-26 12:50'
-updated_date: '2026-05-26 13:52'
+updated_date: '2026-05-26 13:56'
 labels:
   - ui
   - server

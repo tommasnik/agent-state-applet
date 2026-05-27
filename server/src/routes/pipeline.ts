@@ -160,7 +160,7 @@ async function fetchGitHubPipeline(projectPath: string, branch: string, repoId: 
   try {
     runsRaw = await exec(
       "gh",
-      ["run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId,status,conclusion,htmlUrl,headBranch,createdAt,updatedAt", "--repo", repoId],
+      ["run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId,status,conclusion,url,headBranch,createdAt,updatedAt", "--repo", repoId],
       projectPath,
       10000
     );
@@ -173,7 +173,7 @@ async function fetchGitHubPipeline(projectPath: string, branch: string, repoId: 
     databaseId: number;
     status: string;
     conclusion: string | null;
-    htmlUrl: string;
+    url: string;
     headBranch: string;
     createdAt: string;
     updatedAt: string;
@@ -236,7 +236,7 @@ async function fetchGitHubPipeline(projectPath: string, branch: string, repoId: 
     provider: "github",
     status: unifiedStatus,
     ref: run.headBranch,
-    web_url: run.htmlUrl,
+    web_url: run.url,
     started_at: run.createdAt ?? null,
     duration: null,
     jobs,

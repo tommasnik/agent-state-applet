@@ -1,10 +1,10 @@
 ---
 id: TASK-18
 title: 'UI: Backlog integrace — sub-projekty s implementačními akcemi'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-26 13:03'
-updated_date: '2026-05-26 13:56'
+updated_date: '2026-05-26 14:05'
 labels:
   - ui
   - backlog
