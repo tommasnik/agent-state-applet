@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { useAgentsStore, stateColor, stateLabel } from "../store/agents";
 import type { Agent } from "../store/agents";
@@ -697,9 +698,12 @@ function toTildePath(p: string): string {
 export function ProjectsPage() {
   const { agents } = useAgentsStore();
   const agentList = useMemo(() => Object.values(agents), [agents]);
+  const location = useLocation();
+  const navigationProjectPath = (location.state as { projectPath?: string } | null)?.projectPath ?? null;
+  const navigationHandled = useRef(false);
 
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(navigationProjectPath);
   const [selectedSubPath, setSelectedSubPath] = useState<string | null>(null);
   const [openAgent, setOpenAgent] = useState<Agent | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -746,12 +750,26 @@ export function ProjectsPage() {
       .then((r) => r.json())
       .then((data: Project[]) => {
         setProjects(data);
-        if (data.length > 0 && !selectedPath) {
-          setSelectedPath(data[0].path);
+        setSelectedPath((prev) => {
+          if (prev) return prev;
+          return data.length > 0 ? data[0].path : null;
+        });
+        // If navigated with a specific path, make sure that group is not collapsed
+        if (!navigationHandled.current && navigationProjectPath) {
+          navigationHandled.current = true;
+          const found = data.find((p) => p.path === navigationProjectPath);
+          if (found) {
+            const parent = found.path.split("/").slice(0, -1).join("/") || "/";
+            setCollapsedGroups((prev) => {
+              const next = new Set(prev);
+              next.delete(parent);
+              return next;
+            });
+          }
         }
       })
       .catch(() => {/* ignore */});
-  }, [selectedPath]);
+  }, [navigationProjectPath]);
 
   useEffect(() => {
     loadProjects();

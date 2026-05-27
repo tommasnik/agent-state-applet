@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAgentsStore, stateColor, stateLabel } from "../store/agents";
 import type { Agent } from "../store/agents";
 
@@ -130,13 +131,20 @@ function AgentRow({ agent, now }: AgentRowProps) {
 interface ProjectColumnProps {
   group: ProjectGroup;
   now: number;
+  onNavigateToProject: (projectPath: string) => void;
 }
 
-function ProjectColumn({ group, now }: ProjectColumnProps) {
+function ProjectColumn({ group, now, onNavigateToProject }: ProjectColumnProps) {
   return (
     <div className="project-col">
       <div className="project-col-head">
-        <span className="project-col-name">{group.name}</span>
+        <button
+          className="project-col-name project-col-name--link"
+          onClick={() => onNavigateToProject(group.key)}
+          title={group.key}
+        >
+          {group.name}
+        </button>
         <span className="project-col-count">{group.agents.length}</span>
       </div>
       <div className="project-col-agents">
@@ -159,8 +167,13 @@ function ProjectColumn({ group, now }: ProjectColumnProps) {
 export function AgentsPage() {
   const { agents, connected } = useAgentsStore();
   const now = useNow();
+  const navigate = useNavigate();
 
   const groups = useMemo(() => buildGroups(agents), [agents]);
+
+  const handleNavigateToProject = useCallback((projectPath: string) => {
+    navigate("/projects", { state: { projectPath } });
+  }, [navigate]);
 
   return (
     <div className="agents-page">
@@ -180,6 +193,7 @@ export function AgentsPage() {
               key={group.key}
               group={group}
               now={now}
+              onNavigateToProject={handleNavigateToProject}
             />
           ))}
         </div>
