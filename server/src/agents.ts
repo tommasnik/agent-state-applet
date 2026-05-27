@@ -30,6 +30,7 @@ export interface Agent {
   todos: Todo[];
   agent_id: string;
   agent_type: string;
+  parent_session_id?: string;
 }
 
 export type AgentsDict = Record<string, Agent>;
@@ -139,6 +140,20 @@ export class AgentStore {
     const agent_id = incomingAgentId || existing.agent_id || "";
     const agent_type = incomingAgentType || existing.agent_type || "";
 
+    // parent_session_id: link subagent to parent on first registration
+    const incomingParentSessionId = data["parent_session_id"] != null ? String(data["parent_session_id"]) : undefined;
+    const parent_session_id = incomingParentSessionId ?? existing.parent_session_id;
+
+    // Increment parent subagent_count on first link (idempotent across re-upserts)
+    if (incomingParentSessionId && !existing.parent_session_id) {
+      for (const parentAgent of Object.values(this.agents)) {
+        if (parentAgent.session_id === incomingParentSessionId) {
+          parentAgent.subagent_count = (parentAgent.subagent_count ?? 0) + 1;
+          break;
+        }
+      }
+    }
+
     this.agents[pid] = {
       pid: parseInt(pid, 10),
       cwd: String(data["cwd"] ?? existing.cwd ?? ""),
@@ -161,6 +176,7 @@ export class AgentStore {
       todos,
       agent_id,
       agent_type,
+      ...(parent_session_id !== undefined ? { parent_session_id } : {}),
     };
 
     this.notify();

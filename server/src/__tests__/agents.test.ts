@@ -345,4 +345,62 @@ describe("AgentStore", () => {
     expect(store.get("1234")?.agent_id).toBe("abc123");
     expect(store.get("1234")?.agent_type).toBe("Explore");
   });
+
+  // ---------------------------------------------------------------------------
+  // parent_session_id linking
+  // ---------------------------------------------------------------------------
+
+  test("subagent stores parent_session_id", () => {
+    store.upsert({ pid: 2000, session_id: "child-sess", state: "initialized", hook_event: "SessionStart", parent_session_id: "parent-sess" });
+    expect(store.get("2000")?.parent_session_id).toBe("parent-sess");
+  });
+
+  test("subagent without parent_session_id has undefined parent_session_id", () => {
+    store.upsert({ pid: 2000, session_id: "child-sess", state: "initialized", hook_event: "SessionStart" });
+    expect(store.get("2000")?.parent_session_id).toBeUndefined();
+  });
+
+  test("registering subagent increments parent subagent_count", () => {
+    store.upsert({ pid: 1000, session_id: "parent-sess", state: "working", hook_event: "UserPromptSubmit" });
+    expect(store.get("1000")?.subagent_count).toBe(0);
+
+    store.upsert({ pid: 2000, session_id: "child-sess", state: "initialized", hook_event: "SessionStart", parent_session_id: "parent-sess" });
+
+    expect(store.get("1000")?.subagent_count).toBe(1);
+  });
+
+  test("re-upserting same subagent does not double-increment parent", () => {
+    store.upsert({ pid: 1000, session_id: "parent-sess", state: "working", hook_event: "UserPromptSubmit" });
+    store.upsert({ pid: 2000, session_id: "child-sess", state: "initialized", hook_event: "SessionStart", parent_session_id: "parent-sess" });
+    store.upsert({ pid: 2000, session_id: "child-sess", state: "working", hook_event: "PreToolUse", parent_session_id: "parent-sess" });
+    store.upsert({ pid: 2000, session_id: "child-sess", state: "done", hook_event: "Stop", parent_session_id: "parent-sess" });
+
+    expect(store.get("1000")?.subagent_count).toBe(1);
+  });
+
+  test("two different subagents each increment parent once", () => {
+    store.upsert({ pid: 1000, session_id: "parent-sess", state: "working", hook_event: "UserPromptSubmit" });
+    store.upsert({ pid: 2000, session_id: "child-a", state: "initialized", hook_event: "SessionStart", parent_session_id: "parent-sess" });
+    store.upsert({ pid: 3000, session_id: "child-b", state: "initialized", hook_event: "SessionStart", parent_session_id: "parent-sess" });
+
+    expect(store.get("1000")?.subagent_count).toBe(2);
+  });
+
+  test("subagent with nonexistent parent just stores parent_session_id without error", () => {
+    expect(() => {
+      store.upsert({ pid: 2000, session_id: "child-sess", state: "initialized", hook_event: "SessionStart", parent_session_id: "ghost-parent" });
+    }).not.toThrow();
+    expect(store.get("2000")?.parent_session_id).toBe("ghost-parent");
+  });
+
+  test("parent subagent_count is preserved across its own subsequent events", () => {
+    store.upsert({ pid: 1000, session_id: "parent-sess", state: "working", hook_event: "UserPromptSubmit" });
+    store.upsert({ pid: 2000, session_id: "child-sess", state: "initialized", hook_event: "SessionStart", parent_session_id: "parent-sess" });
+
+    // Parent fires its own hook events after child registered
+    store.upsert({ pid: 1000, session_id: "parent-sess", state: "working", hook_event: "PreToolUse" });
+    store.upsert({ pid: 1000, session_id: "parent-sess", state: "working", hook_event: "PostToolUse" });
+
+    expect(store.get("1000")?.subagent_count).toBe(1);
+  });
 });

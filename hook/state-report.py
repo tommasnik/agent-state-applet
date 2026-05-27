@@ -172,6 +172,39 @@ def find_project_root(cwd):
     return weak_candidate or cwd
 
 
+def find_parent_claude_session(claude_pid):
+    """Walk process tree from claude_pid upward; return CLAUDE_CODE_SESSION_ID of the
+    nearest ancestor claude process, or None if not running as a subagent."""
+    pid = claude_pid
+    visited = set()
+    for _ in range(6):
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                ppid = None
+                for line in f:
+                    if line.startswith("PPid:"):
+                        ppid = int(line.split()[1])
+                        break
+            if ppid is None or ppid <= 1 or ppid in visited:
+                break
+        except Exception:
+            break
+        visited.add(ppid)
+        try:
+            with open(f"/proc/{ppid}/cmdline", "rb") as f:
+                cmd = f.read().decode(errors="replace")
+            if "claude" in cmd.lower():
+                with open(f"/proc/{ppid}/environ", "rb") as f:
+                    env = f.read().decode(errors="replace")
+                for entry in env.split("\x00"):
+                    if entry.startswith("CLAUDE_CODE_SESSION_ID="):
+                        return entry.split("=", 1)[1]
+        except Exception:
+            pass
+        pid = ppid
+    return None
+
+
 def get_tty(pid):
     """Return the PTY path (e.g. /dev/pts/3) for stdin of the given PID."""
     try:
@@ -298,6 +331,11 @@ def main():
         "project_root": find_project_root(cwd),
         "tty":          get_tty(claude_pid),
     }
+
+    # parent_session_id — set when running as a subprocess subagent of another claude
+    parent_session_id = find_parent_claude_session(claude_pid)
+    if parent_session_id:
+        payload["parent_session_id"] = parent_session_id
 
     # agent_id / agent_type — present when running as a subagent
     agent_id   = hook.get("agent_id", "")
