@@ -1,10 +1,10 @@
 ---
 id: TASK-23
 title: 'Server: close run on all agent lifecycle end events'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-27 13:39'
-updated_date: '2026-05-27 14:52'
+updated_date: '2026-05-27 14:58'
 labels:
   - backend
   - server

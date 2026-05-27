@@ -225,4 +225,33 @@ describe("scanProjects", () => {
       cleanup(root2);
     }
   });
+
+  test("hasBacklog is true when backlog/ directory exists at project root", () => {
+    const root = mkTmpDir();
+    try {
+      const projectDir = path.join(root, "project");
+      fs.mkdirSync(projectDir);
+      fs.mkdirSync(path.join(projectDir, ".git"));
+      fs.mkdirSync(path.join(projectDir, "backlog", "tasks"), { recursive: true });
+
+      const result = scanProjects([root]);
+      expect(result[0].hasBacklog).toBe(true);
+    } finally {
+      cleanup(root);
+    }
+  });
+
+  test("hasBacklog is false when backlog/ directory is absent", () => {
+    const root = mkTmpDir();
+    try {
+      const projectDir = path.join(root, "project");
+      fs.mkdirSync(projectDir);
+      fs.mkdirSync(path.join(projectDir, ".git"));
+
+      const result = scanProjects([root]);
+      expect(result[0].hasBacklog).toBe(false);
+    } finally {
+      cleanup(root);
+    }
+  });
 });

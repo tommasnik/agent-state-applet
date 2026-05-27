@@ -1,10 +1,10 @@
 ---
 id: TASK-22
 title: 'Server: create runs record for manual (non-scheduled) sessions at SessionStart'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-27 13:39'
-updated_date: '2026-05-27 14:47'
+updated_date: '2026-05-27 14:52'
 labels:
   - backend
   - server

@@ -1,10 +1,10 @@
 ---
 id: TASK-20
 title: 'runner.ts: save child PID into runs table on interactive run start'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-27 13:38'
-updated_date: '2026-05-27 14:38'
+updated_date: '2026-05-27 14:44'
 labels:
   - backend
   - scheduler

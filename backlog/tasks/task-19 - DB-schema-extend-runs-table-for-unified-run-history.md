@@ -1,10 +1,10 @@
 ---
 id: TASK-19
 title: 'DB schema: extend runs table for unified run history'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-27 13:38'
-updated_date: '2026-05-27 14:34'
+updated_date: '2026-05-27 14:38'
 labels:
   - backend
   - db

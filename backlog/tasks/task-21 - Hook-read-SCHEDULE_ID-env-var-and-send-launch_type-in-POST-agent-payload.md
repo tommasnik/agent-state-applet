@@ -1,10 +1,10 @@
 ---
 id: TASK-21
 title: 'Hook: read SCHEDULE_ID env var and send launch_type in POST /agent payload'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-27 13:39'
-updated_date: '2026-05-27 14:44'
+updated_date: '2026-05-27 14:47'
 labels:
   - hook
   - tdd

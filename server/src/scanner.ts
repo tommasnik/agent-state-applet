@@ -13,6 +13,7 @@ export interface Project {
   hasClaudeMd: boolean;
   hasMcpJson: boolean;
   hasSkills: boolean;
+  hasBacklog: boolean;
   agentYaml?: string;
   subProjects: SubProject[];
 }
@@ -97,6 +98,13 @@ function scanDir(dirPath: string): Project | null {
     fs.existsSync(path.join(dirPath, ".claude", "mcp.json")) ||
     fs.existsSync(path.join(dirPath, "mcp.json"));
   const hasSkills = fs.existsSync(path.join(dirPath, ".claude", "skills"));
+  const hasBacklog = (() => {
+    try {
+      return fs.statSync(path.join(dirPath, "backlog")).isDirectory();
+    } catch {
+      return false;
+    }
+  })();
   const agentYaml = readAgentYaml(dirPath);
   const subProjects = findSubProjects(dirPath);
 
@@ -106,6 +114,7 @@ function scanDir(dirPath: string): Project | null {
     hasClaudeMd,
     hasMcpJson,
     hasSkills,
+    hasBacklog,
     agentYaml,
     subProjects,
   };
