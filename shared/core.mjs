@@ -111,6 +111,9 @@ export function tileStyle(color, w, h, cfg) {
          + " width: "  + w + "px;"
          + " height: " + h + "px;"
          + " border-radius: " + c.tileBorderRadius + "px;"
+         // Reserve a 1px transparent border so the hover highlight (which only
+         // recolors it) doesn't shift surrounding layout. See makeHoverable.
+         + " border: 1px solid transparent;"
          + " margin: 0 " + c.tileMargin + "px;";
 }
 
@@ -645,6 +648,7 @@ export function createIndicator(opts) {
     const deps    = opts.deps;
     const host    = opts.host || {};
     const onClick = opts.onClick || function() {};
+    const onShortcutClick = opts.onShortcutClick || function() {};
     let cfg       = Object.assign({}, DEFAULT_CONFIG, opts.config || {});
 
     const St      = deps.St;
@@ -656,10 +660,11 @@ export function createIndicator(opts) {
     box.set_style("padding: 0;");
 
     // pid (str) → { tile, tooltip, color, state, inBox, iconActor }
-    let entries     = {};
-    let transient   = [];
-    let prevStates  = {};
-    let lastAgents  = {};
+    let entries       = {};
+    let transient     = [];
+    let prevStates    = {};
+    let lastAgents    = {};
+    let lastShortcuts = [];
 
 
     const TooltipClass = makeAgentTooltipClass(deps, function() { return cfg; }, host);
@@ -675,9 +680,66 @@ export function createIndicator(opts) {
         return Clutter && Clutter.EVENT_STOP != null ? Clutter.EVENT_STOP : true;
     }
 
-    function render(agents) {
+    // Hover affordance — clickable widgets light up under the pointer so the
+    // user discovers they can click an agent tile, a custom-agent shortcut, or
+    // a group label. Tiles recolor their reserved transparent border; text
+    // controls get a subtle background pill.
+    const TILE_HOVER = " border-color: rgba(255,255,255,0.95);";
+    const TEXT_HOVER = " background-color: rgba(255,255,255,0.16); border-radius: 4px;";
+
+    // Re-apply a widget's base style, re-adding the hover suffix when the
+    // pointer is currently over it (so a re-render mid-hover keeps the glow).
+    function setBaseStyle(widget, baseStyle) {
+        widget._baseStyle = baseStyle;
+        widget.set_style(widget.hover ? baseStyle + (widget._hoverSuffix || "") : baseStyle);
+    }
+
+    // Wire a widget so its style gains `hoverSuffix` while hovered. The widget's
+    // initial style is captured as its base; later updates go through setBaseStyle.
+    function makeHoverable(widget, hoverSuffix) {
+        widget._hoverSuffix = hoverSuffix;
+        if (widget._baseStyle == null) widget._baseStyle = widget.style || "";
+        widget.connect("notify::hover", function() {
+            let base = widget._baseStyle || "";
+            widget.set_style(widget.hover ? base + hoverSuffix : base);
+        });
+    }
+
+    // Build one-click shortcut launch buttons (configured agents with a
+    // shortcut_icon). Rendered at the start of the box — i.e. between the
+    // adapter's "⚙" dashboard button and the running-agent tiles. The icon is
+    // freeform text the user chose (emoji like "🚀" or initials like "TS").
+    // Adds widgets to `box` and `transient` (rebuilt on every render).
+    function buildShortcutButtons(shortcuts, ph) {
+        for (let i = 0; i < shortcuts.length; i++) {
+            let sc = shortcuts[i];
+            if (!sc || !sc.shortcut_icon) continue;
+            let btn = new St.Label({
+                style:       "color: #cfe8ff; font-size: " + Math.max(11, Math.floor(ph * 0.45)) + "px;"
+                           + " padding: 0 6px; margin: 0 1px;",
+                reactive:    true,
+                track_hover: true,
+            });
+            if (btn.set_text) btn.set_text(String(sc.shortcut_icon));
+            if (btn.set_y_align && Clutter && Clutter.ActorAlign) {
+                btn.set_y_align(Clutter.ActorAlign.CENTER);
+            }
+            makeHoverable(btn, TEXT_HOVER);
+            let scId = sc.id;
+            btn.connect("button-press-event", function(_actor, event) {
+                let b = event && event.get_button ? event.get_button() : 1;
+                if (b === 1) onShortcutClick(scId);
+                return clickEventReturn();
+            });
+            box.add_child(btn);
+            transient.push(btn);
+        }
+    }
+
+    function render(agents, shortcuts) {
         try { deps.GLib.spawn_command_line_async('sh -c "echo render n=' + Object.keys(agents).length + ' >> /tmp/claude-flash.log"'); } catch (_) {}
         lastAgents = agents;
+        if (shortcuts !== undefined) lastShortcuts = shortcuts || [];
 
         let ph     = host.panelHeight ? host.panelHeight() : 32;
         let groups = describeRender(agents, ph, cfg);
@@ -712,6 +774,7 @@ export function createIndicator(opts) {
                     if (Clutter && Clutter.BinLayout) {
                         try { tile.set_layout_manager(new Clutter.BinLayout()); } catch (_) {}
                     }
+                    makeHoverable(tile, TILE_HOVER);
                     let clickPid = pid;
                     tile.connect("button-press-event", function(_actor, event) {
                         let btn = event && event.get_button ? event.get_button() : 1;
@@ -742,6 +805,9 @@ export function createIndicator(opts) {
         transient = [];
         let children = box.get_children ? box.get_children() : [];
         children.forEach(function(c) { if (box.remove_child) box.remove_child(c); });
+
+        // Shortcut launch buttons first — they sit before the running-agent tiles.
+        buildShortcutButtons(lastShortcuts, ph);
 
         // Build one vertical block per group: label on top, tiles row below.
         let now = Date.now() / 1000;
@@ -781,6 +847,7 @@ export function createIndicator(opts) {
                     groupLbl.clutter_text.set_single_line_mode(true);
             }
             if (groupLbl.set_text) groupLbl.set_text(g.label);
+            makeHoverable(groupLbl, TEXT_HOVER);
             let labelClickPid = focusPid;
             groupLbl.connect("button-press-event", function(_actor, event) {
                 let btn = event && event.get_button ? event.get_button() : 1;
@@ -793,7 +860,7 @@ export function createIndicator(opts) {
             for (let ai = 0; ai < g.agents.length; ai++) {
                 let agentDesc = g.agents[ai];
                 let entry     = entries[agentDesc.pid];
-                entry.tile.set_style(tileStyle(agentDesc.color, g.tileW, g.tileH, cfg));
+                setBaseStyle(entry.tile, tileStyle(agentDesc.color, g.tileW, g.tileH, cfg));
                 entry.color = agentDesc.color;
                 entry.state = agentDesc.state;
 
@@ -841,7 +908,7 @@ export function createIndicator(opts) {
     function update() {
         let data = readJSONFile(deps, cfg.stateFile);
         if (!data) return;  // keep current display on read failure
-        render(data.agents || {});
+        render(data.agents || {}, data.shortcuts || []);
     }
 
     // ---- timers / watchers ----
@@ -889,10 +956,11 @@ export function createIndicator(opts) {
         destroy:  destroy,
 
         // Test hooks — cheap & harmless to leave in production builds.
-        __test_setState:   function(data) { render((data && data.agents) || {}); },
+        __test_setState:   function(data) { render((data && data.agents) || {}, (data && data.shortcuts) || []); },
         __test_render:     render,
         __test_getEntries: function() { return entries; },
         __test_getCfg:     function() { return cfg; },
         __test_clickPid:   function(pid) { dispatchClick(pid); },
+        __test_clickShortcut: function(id) { onShortcutClick(id); },
     };
 }

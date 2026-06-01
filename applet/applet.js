@@ -107,15 +107,23 @@ ClaudeAgentStateApplet.prototype = {
             },
             config:  {},   // future: feed from Settings.AppletSettings here
             onClick: function(pid, agent, action) { self._onClick(pid, agent, action); },
+            onShortcutClick: function(agentId) { self._runAgent(agentId); },
         });
 
         // Dashboard button — always visible, opens web UI at :7855.
+        let dashStyle = "color: #7ecfff; font-size: 20px; padding: 0 10px;";
         let dashBtn = new St.Label({
             text:        "⚙",
-            style:       "color: #7ecfff; font-size: 20px; padding: 0 10px;",
+            style:       dashStyle,
             reactive:    true,
             track_hover: true,
             y_align:     Clutter.ActorAlign.CENTER,
+        });
+        // Hover affordance — signal the gear is clickable (opens the web UI).
+        dashBtn.connect("notify::hover", function() {
+            dashBtn.set_style(dashBtn.hover
+                ? dashStyle + " background-color: rgba(255,255,255,0.16); border-radius: 4px;"
+                : dashStyle);
         });
         dashBtn.connect("button-press-event", function() {
             Util.spawn(["xdg-open", "http://127.0.0.1:7855/"]);
@@ -190,6 +198,14 @@ ClaudeAgentStateApplet.prototype = {
             "http://127.0.0.1:7855/agent",
             "-H", "Content-Type: application/json",
             "-d", body,
+        ]);
+    },
+
+    // Launch a configured agent (shortcut button) — same path as the web UI.
+    _runAgent: function(agentId) {
+        Util.spawn([
+            "curl", "-s", "-X", "POST",
+            "http://127.0.0.1:7855/api/agents/" + parseInt(agentId, 10) + "/run",
         ]);
     },
 
