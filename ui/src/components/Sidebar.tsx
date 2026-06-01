@@ -1,8 +1,8 @@
 import { NavLink } from "react-router-dom";
 
 const NAV_ITEMS = [
-  { to: "/", label: "Agents" },
-  { to: "/schedules", label: "Schedules" },
+  { to: "/", label: "Running Agents" },
+  { to: "/agents", label: "Agents" },
   { to: "/projects", label: "Projects" },
   { to: "/prompts", label: "Prompts" },
   { to: "/runs", label: "Runs" },

@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { SchedulesPage } from "../pages/SchedulesPage";
+import { AgentsPage } from "../pages/AgentsPage";
 
 // ----------------------------------------------------------------
 // Helpers
@@ -19,6 +19,7 @@ function makeSchedule(overrides: Record<string, unknown> = {}) {
     created_at: "2026-01-01T00:00:00Z",
     last_run: null,
     next_run_at: new Date(Date.now() + 3600000).toISOString(), // 1 hour from now
+    shortcut_icon: null,
     is_running: false,
     ...overrides,
   };
@@ -27,7 +28,7 @@ function makeSchedule(overrides: Record<string, unknown> = {}) {
 function makeRun(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
-    schedule_id: 1,
+    agent_id: 1,
     started_at: new Date(Date.now() - 120000).toISOString(),
     finished_at: new Date(Date.now() - 60000).toISOString(),
     status: "success",
@@ -43,10 +44,10 @@ function makeRun(overrides: Record<string, unknown> = {}) {
 function mockFetchWithSchedules(schedules: unknown[], runs: unknown[] = []) {
   vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
     const urlStr = String(url);
-    if (urlStr.includes("/api/schedules/") && urlStr.includes("/runs")) {
+    if (urlStr.includes("/api/agents/") && urlStr.includes("/runs")) {
       return Promise.resolve({ json: () => Promise.resolve(runs) } as Response);
     }
-    if (urlStr.includes("/api/schedules")) {
+    if (urlStr.includes("/api/agents")) {
       return Promise.resolve({ json: () => Promise.resolve(schedules) } as Response);
     }
     if (urlStr.includes("/api/projects")) {
@@ -59,7 +60,7 @@ function mockFetchWithSchedules(schedules: unknown[], runs: unknown[] = []) {
 function renderPage() {
   return render(
     <MemoryRouter>
-      <SchedulesPage />
+      <AgentsPage />
     </MemoryRouter>
   );
 }

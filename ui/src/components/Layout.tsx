@@ -1,6 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
-import { TopbarStats } from "../pages/AgentsPage";
+import { TopbarStats } from "../pages/RunningAgentsPage";
 
 export function Layout() {
   return (

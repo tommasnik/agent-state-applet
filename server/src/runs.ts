@@ -60,7 +60,7 @@ export function handleSessionStart(payload: {
          pid = COALESCE(pid, ?),
          session_id = COALESCE(session_id, ?),
          terminal_type = COALESCE(terminal_type, ?)
-       WHERE schedule_id = ? AND status = 'running' AND (pid IS NULL OR session_id IS NULL)`
+       WHERE agent_id = ? AND status = 'running' AND (pid IS NULL OR session_id IS NULL)`
     ).run(
       pidNum,
       payload.session_id ?? null,

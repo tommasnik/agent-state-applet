@@ -490,3 +490,73 @@ describe("createIndicator: app icons", () => {
         ind.destroy();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Shortcut launch buttons (configured agents with a shortcut_icon)
+// ---------------------------------------------------------------------------
+function setupWithShortcuts(initialState) {
+    const env = makeFakeEnv();
+    const STATE_FILE = "/tmp/claude-agents-shortcut-test.json";
+    env.setFile(STATE_FILE, initialState || { agents: {} });
+    const host = makeHost();
+    const shortcutClicks = [];
+    const ind = createIndicator({
+        deps:   env.deps,
+        host,
+        config: { stateFile: STATE_FILE },
+        onClick: () => {},
+        onShortcutClick: (id) => shortcutClicks.push(id),
+    });
+    return { env, host, ind, shortcutClicks, STATE_FILE };
+}
+
+describe("createIndicator: shortcut buttons", () => {
+    test("shortcut entry renders a button label with its icon", () => {
+        const { ind } = setupWithShortcuts({
+            agents: {},
+            shortcuts: [{ id: 7, name: "Type sweep", shortcut_icon: "🚀" }],
+        });
+        const labels = findLabels(ind.box);
+        assert.ok(labels.some(l => l._text === "🚀"), "shortcut icon rendered as a label");
+        ind.destroy();
+    });
+
+    test("multi-char text icon (e.g. 'TS') is supported", () => {
+        const { ind } = setupWithShortcuts({
+            agents: {},
+            shortcuts: [{ id: 3, name: "Tests", shortcut_icon: "TS" }],
+        });
+        const labels = findLabels(ind.box);
+        assert.ok(labels.some(l => l._text === "TS"), "two-letter icon rendered");
+        ind.destroy();
+    });
+
+    test("no shortcuts → no extra buttons", () => {
+        const { ind } = setupWithShortcuts({ agents: { "1": agent() }, shortcuts: [] });
+        const labels = findLabels(ind.box);
+        // only the project group label, no shortcut label
+        assert.ok(!labels.some(l => l._text === "🚀"));
+        ind.destroy();
+    });
+
+    test("shortcut buttons render before agent tiles in the box", () => {
+        const { ind } = setupWithShortcuts({
+            agents: { "1": agent() },
+            shortcuts: [{ id: 1, name: "Go", shortcut_icon: "▶" }],
+        });
+        // First direct child of the box is the shortcut button (a label), not a group.
+        const first = ind.box.children[0];
+        assert.equal(first._text, "▶", "shortcut button is the first box child");
+        ind.destroy();
+    });
+
+    test("__test_clickShortcut dispatches the agent id to onShortcutClick", () => {
+        const { ind, shortcutClicks } = setupWithShortcuts({
+            agents: {},
+            shortcuts: [{ id: 42, name: "Deploy", shortcut_icon: "D" }],
+        });
+        ind.__test_clickShortcut(42);
+        assert.deepEqual(shortcutClicks, [42]);
+        ind.destroy();
+    });
+});

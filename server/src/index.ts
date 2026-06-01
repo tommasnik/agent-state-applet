@@ -12,6 +12,7 @@ import {
   STATE_FILE,
   ReviewMeta,
   ScheduledEntry,
+  ShortcutEntry,
 } from "./stateFile";
 import { createWsServer, broadcastState } from "./ws";
 import { initDb, getDb } from "./db";
@@ -36,17 +37,26 @@ function writeState(): void {
   const reviews = Array.from(pendingReviews.values());
   const scheduled = getDb()
     .prepare(`
-      SELECT s.id, s.name, s.project_path, s.cron, s.type, s.enabled
-      FROM schedules s
-      WHERE s.enabled = 1
+      SELECT a.id, a.name, a.project_path, a.cron, a.type, a.enabled
+      FROM agents a
+      WHERE a.enabled = 1
         AND EXISTS (
           SELECT 1 FROM runs r
-          WHERE r.schedule_id = s.id
+          WHERE r.agent_id = a.id
             AND r.status = 'running'
         )
     `)
     .all() as ScheduledEntry[];
-  writeStateFile(agents, reviews, scheduled);
+  // Agents with a shortcut icon — rendered as one-click launch buttons in the applet.
+  const shortcuts = getDb()
+    .prepare(`
+      SELECT id, name, shortcut_icon
+      FROM agents
+      WHERE shortcut_icon IS NOT NULL AND TRIM(shortcut_icon) <> ''
+      ORDER BY id
+    `)
+    .all() as ShortcutEntry[];
+  writeStateFile(agents, reviews, scheduled, shortcuts);
 }
 
 // --- Express app ---
@@ -163,6 +173,9 @@ initDb();
 cleanupStaleRuns();
 schedulerInit();
 restoreState();
+// Publish the initial state file unconditionally so the applet sees configured
+// shortcut buttons even when no agents are running yet.
+writeState();
 startPidChecker();
 startAiTitlePoller();
 

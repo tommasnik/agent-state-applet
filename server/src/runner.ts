@@ -2,13 +2,28 @@ import { spawn } from "child_process";
 import { getDb } from "./db";
 import { broadcast } from "./ws";
 
-function insertRun(scheduleId: number, launchType: 'scheduled' | 'manual_trigger'): number {
+function insertRun(agentId: number, launchType: 'scheduled' | 'manual_trigger'): number {
   const db = getDb();
   const stmt = db.prepare(
-    "INSERT INTO runs (schedule_id, started_at, status, launch_type) VALUES (?, datetime('now'), 'running', ?)"
+    "INSERT INTO runs (agent_id, started_at, status, launch_type) VALUES (?, datetime('now'), 'running', ?)"
   );
-  const result = stmt.run(scheduleId, launchType);
+  const result = stmt.run(agentId, launchType);
   return result.lastInsertRowid as number;
+}
+
+/**
+ * Build the bash command run inside Ghostty. When `prompt` is empty/whitespace
+ * the agent launches plain `claude` (interactive, no prompt); otherwise it
+ * passes the prompt as claude's argument. Either way we drop back to a shell
+ * afterwards so the terminal stays open.
+ */
+function buildInteractiveCommand(projectPath: string, prompt: string): string {
+  const escapedPath = projectPath.replace(/'/g, "'\\''");
+  if (!prompt.trim()) {
+    return `cd '${escapedPath}' && claude ; exec bash`;
+  }
+  const escapedPrompt = prompt.replace(/'/g, "'\\''");
+  return `cd '${escapedPath}' && claude '${escapedPrompt}' ; exec bash`;
 }
 
 function finalizeRun(runId: number, status: "success" | "failed", output: string, aiTitle?: string): void {
@@ -23,23 +38,22 @@ function finalizeRun(runId: number, status: "success" | "failed", output: string
  * Returns the run ID recorded in the DB (status stays 'running' — no exit tracking).
  */
 export function runInteractive(
-  scheduleId: number,
+  agentId: number,
   projectPath: string,
   prompt: string,
   launchType: 'scheduled' | 'manual_trigger' = 'scheduled'
 ): number {
-  const runId = insertRun(scheduleId, launchType);
+  const runId = insertRun(agentId, launchType);
 
-  const escapedPath = projectPath.replace(/'/g, "'\\''");
-  const escapedPrompt = prompt.replace(/'/g, "'\\''");
+  const command = buildInteractiveCommand(projectPath, prompt);
   const display = process.env.DISPLAY || ":0";
   const child = spawn(
     "ghostty",
-    [`--working-directory=${projectPath}`, "-e", "bash", "-lic", `cd '${escapedPath}' && claude '${escapedPrompt}' ; exec bash`],
+    [`--working-directory=${projectPath}`, "-e", "bash", "-lic", command],
     {
       detached: true,
       stdio: "ignore",
-      env: { ...process.env, DISPLAY: display, SCHEDULE_ID: scheduleId.toString() },
+      env: { ...process.env, DISPLAY: display, SCHEDULE_ID: agentId.toString() },
     }
   );
 
@@ -69,12 +83,11 @@ export function runInteractive(
  * Returns 0 as a placeholder run ID.
  */
 export function runInteractiveAnon(projectPath: string, prompt: string): number {
-  const escapedPath = projectPath.replace(/'/g, "'\\''");
-  const escapedPrompt = prompt.replace(/'/g, "'\\''");
+  const command = buildInteractiveCommand(projectPath, prompt);
   const display = process.env.DISPLAY || ":0";
   const child = spawn(
     "ghostty",
-    [`--working-directory=${projectPath}`, "-e", "bash", "-lic", `cd '${escapedPath}' && claude '${escapedPrompt}' ; exec bash`],
+    [`--working-directory=${projectPath}`, "-e", "bash", "-lic", command],
     { detached: true, stdio: "ignore", env: { ...process.env, DISPLAY: display } }
   );
   child.on("error", (err) => {
@@ -88,12 +101,12 @@ export function runInteractiveAnon(projectPath: string, prompt: string): number 
  * Run Claude Code headlessly (--print mode), streaming stdout/stderr over WebSocket.
  */
 export function runHeadless(
-  scheduleId: number,
+  agentId: number,
   projectPath: string,
   prompt: string,
   launchType: 'scheduled' | 'manual_trigger' = 'scheduled'
 ): void {
-  const runId = insertRun(scheduleId, launchType);
+  const runId = insertRun(agentId, launchType);
 
   const proc = spawn("claude", ["--print", prompt], {
     cwd: projectPath,

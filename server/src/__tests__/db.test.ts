@@ -9,7 +9,7 @@ function getColumnNames(db: Database.Database, table: string): string[] {
 
 // All new columns that migration v1 should add
 const NEW_COLUMNS = ["pid", "launch_type", "terminal_type", "ai_title", "session_id"];
-const ORIGINAL_COLUMNS = ["id", "schedule_id", "started_at", "finished_at", "status", "output"];
+const ORIGINAL_COLUMNS = ["id", "agent_id", "started_at", "finished_at", "status", "output"];
 
 // Create an old-schema DB (without new columns) using raw Database
 function createOldSchemaDb(): Database.Database {
@@ -283,13 +283,74 @@ describe("insert and query new columns", () => {
     expect(row["session_id"]).toBe("sess-xyz-789");
   });
 
-  test("schedule_id remains nullable (NULL for manual runs)", () => {
+  test("agent_id remains nullable (NULL for manual runs)", () => {
     db.prepare(
       "INSERT INTO runs (started_at, launch_type) VALUES (datetime('now'), 'manual')"
     ).run();
-    const row = db.prepare("SELECT schedule_id FROM runs LIMIT 1").get() as {
-      schedule_id: number | null;
+    const row = db.prepare("SELECT agent_id FROM runs LIMIT 1").get() as {
+      agent_id: number | null;
     };
-    expect(row.schedule_id).toBeNull();
+    expect(row.agent_id).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration v2 — legacy `schedules` table is renamed/rebuilt to `agents`,
+// and runs.schedule_id is renamed to runs.agent_id, preserving data.
+// ---------------------------------------------------------------------------
+describe("migration v2: schedules → agents", () => {
+  test("legacy schedules DB is migrated to agents with data preserved", () => {
+    const file = `/tmp/agent-state-migrate-${process.pid}.sqlite`;
+    try {
+      // Build a legacy-schema DB on disk (schedules + runs.schedule_id).
+      const legacy = new Database(file);
+      legacy.exec(`
+        CREATE TABLE schedules (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          project_path TEXT NOT NULL,
+          prompt TEXT NOT NULL,
+          cron TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('interactive', 'headless')),
+          enabled INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE runs (
+          id INTEGER PRIMARY KEY,
+          schedule_id INTEGER REFERENCES schedules(id),
+          started_at TEXT NOT NULL,
+          finished_at TEXT,
+          status TEXT,
+          output TEXT
+        );
+      `);
+      legacy
+        .prepare("INSERT INTO schedules (id, name, project_path, prompt, cron, type, enabled) VALUES (1, 'Old', '/tmp/p', 'do it', '0 2 * * *', 'headless', 1)")
+        .run();
+      legacy.prepare("INSERT INTO runs (schedule_id, started_at, status) VALUES (1, datetime('now'), 'success')").run();
+      legacy.close();
+
+      // Re-open through initDb → migration runs.
+      const db = initDb(file);
+
+      const agentsCols = getColumnNames(db, "agents");
+      expect(agentsCols).toContain("shortcut_icon");
+
+      const runsCols = getColumnNames(db, "runs");
+      expect(runsCols).toContain("agent_id");
+      expect(runsCols).not.toContain("schedule_id");
+
+      const agent = db.prepare("SELECT * FROM agents WHERE id = 1").get() as { name: string };
+      expect(agent.name).toBe("Old");
+
+      const run = db.prepare("SELECT agent_id FROM runs LIMIT 1").get() as { agent_id: number };
+      expect(run.agent_id).toBe(1);
+
+      db.close();
+    } finally {
+      for (const ext of ["", "-wal", "-shm"]) {
+        try { require("fs").unlinkSync(file + ext); } catch { /* ignore */ }
+      }
+    }
   });
 });

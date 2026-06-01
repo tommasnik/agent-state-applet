@@ -9,15 +9,23 @@ export interface ScheduledEntry {
   id: number;
   name: string;
   project_path: string;
-  cron: string;
+  cron: string | null;
   type: "interactive" | "headless";
   enabled: boolean;
+}
+
+/** A configured agent that has a shortcut icon — rendered as a button in the applet. */
+export interface ShortcutEntry {
+  id: number;
+  name: string;
+  shortcut_icon: string;
 }
 
 export interface StatePayload {
   agents: AgentsDict;
   reviews?: ReviewMeta[];
   scheduled?: ScheduledEntry[];
+  shortcuts?: ShortcutEntry[];
   updated_at: number;
 }
 
@@ -29,12 +37,18 @@ export interface ReviewMeta {
 }
 
 /** Write state atomically: write to .tmp then rename */
-export function writeState(agents: AgentsDict, reviews: ReviewMeta[] = [], scheduled: ScheduledEntry[] = []): void {
+export function writeState(
+  agents: AgentsDict,
+  reviews: ReviewMeta[] = [],
+  scheduled: ScheduledEntry[] = [],
+  shortcuts: ShortcutEntry[] = []
+): void {
   const tmp = STATE_FILE + ".tmp";
   const payload: StatePayload = {
     agents,
     reviews,
     scheduled,
+    shortcuts,
     updated_at: Date.now() / 1000,
   };
   fs.writeFileSync(tmp, JSON.stringify(payload));

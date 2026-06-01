@@ -9,7 +9,7 @@ import { RunsPage } from "../pages/RunsPage";
 
 interface Run {
   id: number;
-  schedule_id: number | null;
+  agent_id: number | null;
   pid: number | null;
   session_id: string | null;
   project_root: string | null;
@@ -20,7 +20,7 @@ interface Run {
   duration_ms: number | null;
   status: string | null;
   ai_title: string | null;
-  schedule_name: string | null;
+  agent_name: string | null;
 }
 
 // ----------------------------------------------------------------
@@ -30,7 +30,7 @@ interface Run {
 function makeRun(overrides: Partial<Run> = {}): Run {
   return {
     id: 1,
-    schedule_id: null,
+    agent_id: null,
     pid: 1234,
     session_id: "sess-abc",
     project_root: "/home/user/my-project",
@@ -41,7 +41,7 @@ function makeRun(overrides: Partial<Run> = {}): Run {
     duration_ms: 60000,
     status: "success",
     ai_title: "Test session",
-    schedule_name: null,
+    agent_name: null,
     ...overrides,
   };
 }
@@ -247,35 +247,35 @@ describe("AC#6: clicking project name sets project filter", () => {
 });
 
 // ----------------------------------------------------------------
-// AC#7: scheduled type badge links to /schedules
+// AC#7: scheduled type badge links to /agents
 // ----------------------------------------------------------------
 
-describe("AC#7: scheduled type badge navigates to /schedules", () => {
-  test("scheduled run has a link to /schedules", async () => {
+describe("AC#7: scheduled type badge navigates to /agents", () => {
+  test("scheduled run has a link to /agents", async () => {
     mockFetch([
       makeRun({
         id: 2,
         launch_type: "scheduled",
-        schedule_id: 5,
-        schedule_name: "Nightly check",
+        agent_id: 5,
+        agent_name: "Nightly check",
       }),
     ]);
     renderPage();
     await waitFor(() =>
-      expect(screen.getByTestId("schedule-link-2")).toBeInTheDocument()
+      expect(screen.getByTestId("agent-link-2")).toBeInTheDocument()
     );
-    const link = screen.getByTestId("schedule-link-2");
-    expect(link).toHaveAttribute("href", "/schedules");
+    const link = screen.getByTestId("agent-link-2");
+    expect(link).toHaveAttribute("href", "/agents");
     expect(link).toHaveTextContent("scheduled");
   });
 
   test("non-scheduled run does not have schedule link", async () => {
-    mockFetch([makeRun({ id: 3, launch_type: "manual", schedule_id: null })]);
+    mockFetch([makeRun({ id: 3, launch_type: "manual", agent_id: null })]);
     renderPage();
     await waitFor(() =>
       expect(screen.getByTestId("project-link-3")).toBeInTheDocument()
     );
-    expect(screen.queryByTestId("schedule-link-3")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("agent-link-3")).not.toBeInTheDocument();
   });
 });
 

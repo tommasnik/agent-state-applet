@@ -23,20 +23,133 @@ const MIGRATION_V1_COLUMNS = [
   { name: "project_root", def: "TEXT" },
 ] as const;
 
+function tableExists(db: Database.Database, name: string): boolean {
+  const row = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(name);
+  return !!row;
+}
+
+function columnNames(db: Database.Database, table: string): Set<string> {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return new Set(cols.map((c) => c.name));
+}
+
+interface ColumnInfo {
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
+}
+
+/**
+ * Migration v2 — rename the `schedules` feature to `agents`:
+ *   - rebuild the legacy `schedules` table as `agents` with relaxed constraints
+ *     (cron / prompt now NULLABLE — an agent may have no schedule and/or no prompt)
+ *     and the new `shortcut_icon` column,
+ *   - rebuild `runs`, renaming `schedule_id` → `agent_id` and pointing its
+ *     foreign key at agents(id) (a plain RENAME COLUMN would leave the FK
+ *     dangling at the dropped `schedules` table).
+ *
+ * Done with foreign keys disabled so the table swaps don't trip FK enforcement
+ * (foreign_keys defaults to ON with this better-sqlite3 build). Idempotent and
+ * safe on fresh DBs (guarded by tableExists / column checks).
+ */
+function migrateSchedulesToAgents(db: Database.Database): void {
+  const hasSchedules = tableExists(db, "schedules");
+  const hasAgents = tableExists(db, "agents");
+  const runsExists = tableExists(db, "runs");
+  const runsCols = runsExists ? columnNames(db, "runs") : new Set<string>();
+  const runsSql = runsExists
+    ? ((db.prepare("SELECT sql FROM sqlite_master WHERE name = 'runs'").get() as { sql: string } | undefined)?.sql ?? "")
+    : "";
+  // Rebuild runs when it still has the old column name, OR when its foreign key
+  // still points at the (renamed/dropped) schedules table — the latter happens
+  // if an earlier migration used ALTER TABLE RENAME COLUMN (which keeps the FK).
+  const needRuns = runsExists && (runsCols.has("schedule_id") || /REFERENCES\s+schedules/i.test(runsSql));
+  const needAgents = hasSchedules && !hasAgents;
+
+  if (!hasSchedules && !needRuns) return;
+
+  db.pragma("foreign_keys = OFF");
+  try {
+    const migrate = db.transaction(() => {
+      if (needAgents) {
+        db.exec(`
+          CREATE TABLE agents (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            project_path TEXT NOT NULL,
+            prompt TEXT,
+            cron TEXT,
+            type TEXT NOT NULL CHECK(type IN ('interactive', 'headless')),
+            enabled INTEGER NOT NULL DEFAULT 1,
+            shortcut_icon TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO agents (id, name, project_path, prompt, cron, type, enabled, created_at)
+            SELECT id, name, project_path, prompt, cron, type, enabled, created_at FROM schedules;
+        `);
+      }
+
+      if (needRuns) {
+        // Rebuild runs preserving every existing column (incl. v1 additions),
+        // renaming schedule_id → agent_id and redirecting the FK to agents(id).
+        const cols = db.prepare("PRAGMA table_info(runs)").all() as ColumnInfo[];
+        const defs: string[] = [];
+        const newNames: string[] = [];
+        const oldNames: string[] = [];
+        for (const c of cols) {
+          const name = c.name === "schedule_id" ? "agent_id" : c.name;
+          let def = `${name} ${c.type || "TEXT"}`;
+          if (c.pk) def += " PRIMARY KEY";
+          else if (c.notnull) def += " NOT NULL";
+          if (c.dflt_value !== null && c.dflt_value !== undefined) def += ` DEFAULT ${c.dflt_value}`;
+          defs.push(def);
+          newNames.push(name);
+          oldNames.push(c.name);
+        }
+        defs.push("FOREIGN KEY(agent_id) REFERENCES agents(id)");
+        db.exec(`CREATE TABLE runs_migrated (${defs.join(", ")})`);
+        db.exec(
+          `INSERT INTO runs_migrated (${newNames.join(", ")}) SELECT ${oldNames.join(", ")} FROM runs`
+        );
+        db.exec("DROP TABLE runs");
+        db.exec("ALTER TABLE runs_migrated RENAME TO runs");
+      }
+
+      // Drop the legacy table last (data already lives in `agents`). Covers both
+      // a clean upgrade and a stale leftover from an interrupted earlier migration.
+      if (tableExists(db, "schedules")) {
+        db.exec("DROP TABLE schedules");
+      }
+    });
+    migrate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
 /**
  * Run an idempotent migration that adds new columns to the `runs` table.
  * SQLite does not support ADD COLUMN IF NOT EXISTS, so we check PRAGMA table_info first.
  */
 function migrateRunsTable(db: Database.Database): void {
-  const existing = db
-    .prepare("PRAGMA table_info(runs)")
-    .all() as Array<{ name: string }>;
-  const existingNames = new Set(existing.map((col) => col.name));
+  const existingNames = columnNames(db, "runs");
 
   for (const col of MIGRATION_V1_COLUMNS) {
     if (!existingNames.has(col.name)) {
       db.exec(`ALTER TABLE runs ADD COLUMN ${col.name} ${col.def} DEFAULT NULL`);
     }
+  }
+}
+
+/** Ensure the `agents` table has all expected columns (idempotent). */
+function migrateAgentsTable(db: Database.Database): void {
+  const existingNames = columnNames(db, "agents");
+  if (!existingNames.has("shortcut_icon")) {
+    db.exec("ALTER TABLE agents ADD COLUMN shortcut_icon TEXT DEFAULT NULL");
   }
 }
 
@@ -50,26 +163,32 @@ export function initDb(dbPath?: string): Database.Database {
 
   const db = new Database(resolvedPath);
 
+  // Rename legacy schedules→agents and runs.schedule_id→agent_id BEFORE the
+  // CREATE TABLE IF NOT EXISTS below, so an existing DB is migrated rather than
+  // shadowed by a fresh empty `agents` table.
+  migrateSchedulesToAgents(db);
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS project_roots (
       id INTEGER PRIMARY KEY,
       path TEXT NOT NULL UNIQUE
     );
 
-    CREATE TABLE IF NOT EXISTS schedules (
+    CREATE TABLE IF NOT EXISTS agents (
       id INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
       project_path TEXT NOT NULL,
-      prompt TEXT NOT NULL,
-      cron TEXT NOT NULL,
+      prompt TEXT,
+      cron TEXT,
       type TEXT NOT NULL CHECK(type IN ('interactive', 'headless')),
       enabled INTEGER NOT NULL DEFAULT 1,
+      shortcut_icon TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS runs (
       id INTEGER PRIMARY KEY,
-      schedule_id INTEGER REFERENCES schedules(id),
+      agent_id INTEGER REFERENCES agents(id),
       started_at TEXT NOT NULL,
       finished_at TEXT,
       status TEXT CHECK(status IN ('running', 'success', 'failed', 'cancelled')),
@@ -78,6 +197,7 @@ export function initDb(dbPath?: string): Database.Database {
   `);
 
   migrateRunsTable(db);
+  migrateAgentsTable(db);
 
   return db;
 }

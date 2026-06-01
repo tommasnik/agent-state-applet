@@ -19,14 +19,14 @@ function setupDb(): Database.Database {
 
 function insertSchedule(db: Database.Database, id = 1, name = "My Schedule"): void {
   db.prepare(
-    "INSERT INTO schedules (id, name, project_path, prompt, cron, type, enabled) VALUES (?, ?, '/tmp', 'do it', '* * * * *', 'interactive', 1)"
+    "INSERT INTO agents (id, name, project_path, prompt, cron, type, enabled) VALUES (?, ?, '/tmp', 'do it', '* * * * *', 'interactive', 1)"
   ).run(id, name);
 }
 
 function insertRun(
   db: Database.Database,
   opts: {
-    schedule_id?: number | null;
+    agent_id?: number | null;
     pid?: number | null;
     session_id?: string | null;
     project_root?: string | null;
@@ -40,7 +40,7 @@ function insertRun(
   } = {}
 ): number {
   const {
-    schedule_id = null,
+    agent_id = null,
     pid = null,
     session_id = null,
     project_root = null,
@@ -54,10 +54,10 @@ function insertRun(
   } = opts;
 
   const result = db.prepare(
-    `INSERT INTO runs (schedule_id, pid, session_id, project_root, launch_type, terminal_type,
+    `INSERT INTO runs (agent_id, pid, session_id, project_root, launch_type, terminal_type,
        started_at, finished_at, status, ai_title, tty)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(schedule_id, pid, session_id, project_root, launch_type, terminal_type,
+  ).run(agent_id, pid, session_id, project_root, launch_type, terminal_type,
     started_at, finished_at, status, ai_title, tty);
 
   return result.lastInsertRowid as number;
@@ -104,7 +104,7 @@ describe("AC#1 — GET /api/runs returns all runs", () => {
     expect(run).toHaveProperty("launch_type", "manual");
     expect(run).toHaveProperty("status", "running");
     expect(run).toHaveProperty("duration_ms");
-    expect(run).toHaveProperty("schedule_name");
+    expect(run).toHaveProperty("agent_name");
   });
 });
 
@@ -361,9 +361,9 @@ describe("AC#5 — duration_ms computation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC #6 — schedule_name is joined correctly
+// AC #6 — agent_name is joined correctly
 // ---------------------------------------------------------------------------
-describe("AC#6 — schedule_name join", () => {
+describe("AC#6 — agent_name join", () => {
   let db: Database.Database;
   let app: express.Application;
 
@@ -372,30 +372,30 @@ describe("AC#6 — schedule_name join", () => {
     app = setupApp();
   });
 
-  test("schedule_name is null when no schedule_id", async () => {
-    insertRun(db, { schedule_id: null, session_id: "s1" });
+  test("agent_name is null when no agent_id", async () => {
+    insertRun(db, { agent_id: null, session_id: "s1" });
 
     const res = await request(app).get("/api/runs");
     expect(res.status).toBe(200);
-    expect(res.body.runs[0].schedule_name).toBeNull();
+    expect(res.body.runs[0].agent_name).toBeNull();
   });
 
-  test("schedule_name is joined from schedules table", async () => {
+  test("agent_name is joined from agents table", async () => {
     insertSchedule(db, 1, "Daily Sync");
-    insertRun(db, { schedule_id: 1, session_id: "s1" });
+    insertRun(db, { agent_id: 1, session_id: "s1" });
 
     const res = await request(app).get("/api/runs");
     expect(res.status).toBe(200);
-    expect(res.body.runs[0].schedule_name).toBe("Daily Sync");
+    expect(res.body.runs[0].agent_name).toBe("Daily Sync");
   });
 
-  test("schedule_name via GET /api/runs/:id", async () => {
+  test("agent_name via GET /api/runs/:id", async () => {
     insertSchedule(db, 2, "Weekly Report");
-    const id = insertRun(db, { schedule_id: 2, session_id: "s2" });
+    const id = insertRun(db, { agent_id: 2, session_id: "s2" });
 
     const res = await request(app).get(`/api/runs/${id}`);
     expect(res.status).toBe(200);
-    expect(res.body.schedule_name).toBe("Weekly Report");
+    expect(res.body.agent_name).toBe("Weekly Report");
   });
 });
 

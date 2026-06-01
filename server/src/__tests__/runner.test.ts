@@ -30,9 +30,9 @@ import { runInteractive } from "../runner";
 function setupDb(): Database.Database {
   const db = initDb(":memory:");
 
-  // Insert a schedule so schedule_id FK constraint is satisfied
+  // Insert a schedule so agent_id FK constraint is satisfied
   db.prepare(
-    "INSERT INTO schedules (id, name, project_path, prompt, cron, type, enabled) VALUES (1, 'test', '/tmp', 'do work', '* * * * *', 'interactive', 1)"
+    "INSERT INTO agents (id, name, project_path, prompt, cron, type, enabled) VALUES (1, 'test', '/tmp', 'do work', '* * * * *', 'interactive', 1)"
   ).run();
 
   setTestDb(db);
@@ -158,7 +158,7 @@ describe("runInteractive — SCHEDULE_ID env var", () => {
     // Insert a second schedule to test a different ID
     const db = setupDb();
     db.prepare(
-      "INSERT INTO schedules (id, name, project_path, prompt, cron, type, enabled) VALUES (2, 'test2', '/tmp', 'do work', '* * * * *', 'interactive', 1)"
+      "INSERT INTO agents (id, name, project_path, prompt, cron, type, enabled) VALUES (2, 'test2', '/tmp', 'do work', '* * * * *', 'interactive', 1)"
     ).run();
     setTestDb(db);
 
@@ -166,5 +166,37 @@ describe("runInteractive — SCHEDULE_ID env var", () => {
 
     const spawnOptions = (mockSpawn.mock.calls[0] as unknown[])[2] as { env?: Record<string, string> };
     expect(spawnOptions.env!["SCHEDULE_ID"]).toBe("2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Interactive command — prompt vs. no-prompt
+// ---------------------------------------------------------------------------
+describe("runInteractive — bash command", () => {
+  beforeEach(() => {
+    mockSpawn.mockClear();
+    setupDb();
+  });
+
+  function spawnedCommand(): string {
+    const argv = (mockSpawn.mock.calls[0] as unknown[])[1] as string[];
+    return argv[argv.length - 1];
+  }
+
+  test("with a prompt → runs `claude '<prompt>'`", () => {
+    runInteractive(1, "/tmp/project", "do something", "manual_trigger");
+    expect(spawnedCommand()).toContain("claude 'do something'");
+  });
+
+  test("empty prompt → runs plain `claude` (no prompt arg)", () => {
+    runInteractive(1, "/tmp/project", "", "manual_trigger");
+    const cmd = spawnedCommand();
+    expect(cmd).toContain("&& claude ;");
+    expect(cmd).not.toContain("claude ''");
+  });
+
+  test("whitespace-only prompt → runs plain `claude`", () => {
+    runInteractive(1, "/tmp/project", "   ", "manual_trigger");
+    expect(spawnedCommand()).toContain("&& claude ;");
   });
 });

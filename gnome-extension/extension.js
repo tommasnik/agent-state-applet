@@ -107,6 +107,7 @@ class ClaudeIndicator extends PanelMenu.Button {
             },
             config:  {},   // future: feed from this.getSettings()
             onClick: (pid, agent, action) => self._onClick(pid, agent, action),
+            onShortcutClick: (agentId) => self._runAgent(agentId),
         });
 
         // Dashboard button — always visible, opens web UI at :7855.
@@ -186,6 +187,14 @@ class ClaudeIndicator extends PanelMenu.Button {
             'http://127.0.0.1:7855/agent',
             '-H', 'Content-Type: application/json',
             '-d', JSON.stringify({ pid: parseInt(pid, 10), state: 'initialized' }),
+        ]);
+    }
+
+    // Launch a configured agent (shortcut button) — same path as the web UI.
+    _runAgent(agentId) {
+        Util.spawn([
+            'curl', '-s', '-X', 'POST',
+            'http://127.0.0.1:7855/api/agents/' + parseInt(agentId, 10) + '/run',
         ]);
     }
 

@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 
 interface Run {
   id: number;
-  schedule_id: number | null;
+  agent_id: number | null;
   pid: number | null;
   session_id: string | null;
   project_root: string | null;
@@ -18,7 +18,7 @@ interface Run {
   duration_ms: number | null;
   status: string | null;
   ai_title: string | null;
-  schedule_name: string | null;
+  agent_name: string | null;
 }
 
 interface RunsResponse {
@@ -244,10 +244,10 @@ export function RunsPage() {
                     </span>
                   </td>
                   <td style={{ padding: "6px 8px" }}>
-                    {run.launch_type === "scheduled" && run.schedule_id ? (
+                    {run.launch_type === "scheduled" && run.agent_id ? (
                       <Link
-                        to="/schedules"
-                        data-testid={`schedule-link-${run.id}`}
+                        to="/agents"
+                        data-testid={`agent-link-${run.id}`}
                       >
                         {typeLabel(run)}
                       </Link>

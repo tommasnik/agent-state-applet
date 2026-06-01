@@ -6,14 +6,14 @@ function setupDb(): Database.Database {
   const db = initDb(":memory:");
   // Insert a schedule for FK tests
   db.prepare(
-    "INSERT INTO schedules (id, name, project_path, prompt, cron, type, enabled) VALUES (1, 'sched', '/tmp', 'do it', '* * * * *', 'interactive', 1)"
+    "INSERT INTO agents (id, name, project_path, prompt, cron, type, enabled) VALUES (1, 'sched', '/tmp', 'do it', '* * * * *', 'interactive', 1)"
   ).run();
   setTestDb(db);
   return db;
 }
 
 // ---------------------------------------------------------------------------
-// AC #1 — SessionStart without schedule_id creates manual run
+// AC #1 — SessionStart without agent_id creates manual run
 // ---------------------------------------------------------------------------
 describe("AC#1 — manual SessionStart creates runs record", () => {
   let db: Database.Database;
@@ -34,7 +34,7 @@ describe("AC#1 — manual SessionStart creates runs record", () => {
     expect(row["status"]).toBe("running");
     expect(row["pid"]).toBe(12345);
     expect(row["session_id"]).toBe("sess-001");
-    expect(row["schedule_id"]).toBeNull();
+    expect(row["agent_id"]).toBeNull();
   });
 
   test("stores terminal_type when provided", () => {
@@ -61,7 +61,7 @@ describe("AC#1 — manual SessionStart creates runs record", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC #2 — SessionStart with schedule_id updates existing run (no duplicate)
+// AC #2 — SessionStart with agent_id updates existing run (no duplicate)
 // ---------------------------------------------------------------------------
 describe("AC#2 — scheduled SessionStart updates existing run", () => {
   let db: Database.Database;
@@ -74,13 +74,13 @@ describe("AC#2 — scheduled SessionStart updates existing run", () => {
     // Pre-create a run as the scheduler would (no pid/session_id yet)
     const { lastInsertRowid: runId } = db
       .prepare(
-        "INSERT INTO runs (schedule_id, started_at, status) VALUES (1, datetime('now'), 'running')"
+        "INSERT INTO runs (agent_id, started_at, status) VALUES (1, datetime('now'), 'running')"
       )
       .run();
 
-    handleSessionStart({ pid: "55555", session_id: "sess-sched-1", schedule_id: 1 });
+    handleSessionStart({ pid: "55555", session_id: "sess-sched-1", agent_id: 1 });
 
-    const rows = db.prepare("SELECT * FROM runs WHERE schedule_id = 1").all() as Record<string, unknown>[];
+    const rows = db.prepare("SELECT * FROM runs WHERE agent_id = 1").all() as Record<string, unknown>[];
     expect(rows).toHaveLength(1);
 
     const row = rows[0];
@@ -92,14 +92,14 @@ describe("AC#2 — scheduled SessionStart updates existing run", () => {
 
   test("does not overwrite already-set pid or session_id (COALESCE)", () => {
     db.prepare(
-      "INSERT INTO runs (schedule_id, pid, session_id, started_at, status) VALUES (1, 44444, 'sess-existing', datetime('now'), 'running')"
+      "INSERT INTO runs (agent_id, pid, session_id, started_at, status) VALUES (1, 44444, 'sess-existing', datetime('now'), 'running')"
     ).run();
 
     // Send again with different values — should be ignored (COALESCE)
-    handleSessionStart({ pid: "99999", session_id: "sess-new", schedule_id: 1 });
+    handleSessionStart({ pid: "99999", session_id: "sess-new", agent_id: 1 });
 
     const row = db
-      .prepare("SELECT pid, session_id FROM runs WHERE schedule_id = 1")
+      .prepare("SELECT pid, session_id FROM runs WHERE agent_id = 1")
       .get() as { pid: number; session_id: string };
 
     // pid and session_id both already set — COALESCE keeps original values

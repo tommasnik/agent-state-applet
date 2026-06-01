@@ -121,7 +121,7 @@ const WORKING_STATES = new Set(["working", "initialized"]);
 
 interface RunItem {
   id: number;
-  schedule_id: number | null;
+  agent_id: number | null;
   launch_type: string | null;
   terminal_type: string | null;
   started_at: string;
@@ -129,7 +129,7 @@ interface RunItem {
   duration_ms: number | null;
   status: string | null;
   ai_title: string | null;
-  schedule_name: string | null;
+  agent_name: string | null;
 }
 
 function runFormatMs(ms: number): string {
@@ -286,8 +286,8 @@ export function ProjectRunsTab({ projectPath }: ProjectRunsTabProps) {
               return (
                 <tr key={run.id}>
                   <td style={{ padding: "4px 8px" }}>
-                    {run.launch_type === "scheduled" && run.schedule_id ? (
-                      <Link to="/schedules" data-testid={`runs-tab-schedule-link-${run.id}`}>
+                    {run.launch_type === "scheduled" && run.agent_id ? (
+                      <Link to="/agents" data-testid={`runs-tab-agent-link-${run.id}`}>
                         {runTypeLabel(run)}
                       </Link>
                     ) : (

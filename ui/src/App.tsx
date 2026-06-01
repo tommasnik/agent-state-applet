@@ -1,7 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { RunningAgentsPage } from "./pages/RunningAgentsPage";
 import { AgentsPage } from "./pages/AgentsPage";
-import { SchedulesPage } from "./pages/SchedulesPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { PromptsPage } from "./pages/PromptsPage";
 import { RunsPage } from "./pages/RunsPage";
@@ -16,8 +16,8 @@ export default function App() {
     <AgentsContext.Provider value={agentsState}>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<AgentsPage />} />
-          <Route path="schedules" element={<SchedulesPage />} />
+          <Route index element={<RunningAgentsPage />} />
+          <Route path="agents" element={<AgentsPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="prompts" element={<PromptsPage />} />
           <Route path="runs" element={<RunsPage />} />

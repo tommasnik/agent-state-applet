@@ -6,7 +6,7 @@ import { getDb } from "../db";
 function setupDb(): Database.Database {
   const db = initDb(":memory:");
   db.prepare(
-    "INSERT INTO schedules (id, name, project_path, prompt, cron, type, enabled) VALUES (1, 'sched', '/tmp', 'do it', '* * * * *', 'interactive', 1)"
+    "INSERT INTO agents (id, name, project_path, prompt, cron, type, enabled) VALUES (1, 'sched', '/tmp', 'do it', '* * * * *', 'interactive', 1)"
   ).run();
   setTestDb(db);
   return db;
@@ -250,7 +250,7 @@ describe("AC#7 — headless close writes correct status", () => {
 
   test("finalizeRun via direct DB update sets status=success and output", () => {
     const { lastInsertRowid: runId } = db.prepare(
-      "INSERT INTO runs (schedule_id, started_at, status, launch_type) VALUES (1, datetime('now', '-3 seconds'), 'running', 'scheduled')"
+      "INSERT INTO runs (agent_id, started_at, status, launch_type) VALUES (1, datetime('now', '-3 seconds'), 'running', 'scheduled')"
     ).run();
 
     // Simulate what finalizeRun does (it's not exported, so we call the same SQL)
@@ -269,7 +269,7 @@ describe("AC#7 — headless close writes correct status", () => {
 
   test("finalizeRun via direct DB update sets status=failed on non-zero exit", () => {
     const { lastInsertRowid: runId } = db.prepare(
-      "INSERT INTO runs (schedule_id, started_at, status, launch_type) VALUES (1, datetime('now', '-1 seconds'), 'running', 'scheduled')"
+      "INSERT INTO runs (agent_id, started_at, status, launch_type) VALUES (1, datetime('now', '-1 seconds'), 'running', 'scheduled')"
     ).run();
 
     db.prepare(

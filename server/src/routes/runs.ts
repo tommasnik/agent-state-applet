@@ -5,7 +5,7 @@ const router = Router();
 
 interface RunRow {
   id: number;
-  schedule_id: number | null;
+  agent_id: number | null;
   pid: number | null;
   session_id: string | null;
   project_root: string | null;
@@ -16,7 +16,7 @@ interface RunRow {
   duration_ms: number | null;
   status: string | null;
   ai_title: string | null;
-  schedule_name: string | null;
+  agent_name: string | null;
 }
 
 const RUN_SELECT = `
@@ -24,9 +24,9 @@ const RUN_SELECT = `
     CASE WHEN r.finished_at IS NOT NULL
       THEN CAST((julianday(r.finished_at) - julianday(r.started_at)) * 86400000 AS INTEGER)
       ELSE NULL END AS duration_ms,
-    s.name AS schedule_name
+    a.name AS agent_name
   FROM runs r
-  LEFT JOIN schedules s ON r.schedule_id = s.id
+  LEFT JOIN agents a ON r.agent_id = a.id
 `;
 
 /** GET /api/runs — list runs with optional filtering and pagination */
@@ -48,7 +48,7 @@ router.get("/runs", (req: Request, res: Response) => {
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  const countQuery = `SELECT COUNT(*) as count FROM runs r LEFT JOIN schedules s ON r.schedule_id = s.id ${where}`;
+  const countQuery = `SELECT COUNT(*) as count FROM runs r LEFT JOIN agents a ON r.agent_id = a.id ${where}`;
   const total = (db.prepare(countQuery).get(...params) as { count: number }).count;
 
   const dataQuery = `${RUN_SELECT} ${where} ORDER BY r.id DESC LIMIT ? OFFSET ?`;
