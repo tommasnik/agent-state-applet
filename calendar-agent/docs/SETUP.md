@@ -111,121 +111,155 @@ WhatsApp and note the **exact group names**.
 
 ---
 
-## Part 2 — Gmail + Google Calendar (one Google Cloud OAuth project)  → closes AC#2
+## Part 2 — Gmail + Google Calendar (official Google remote MCP servers)  → closes AC#2
 
-Both servers authorize against **one** Google Cloud project and **one** OAuth
-client (one `gcp-oauth.keys.json`). Each server still stores its own refresh
-token and must be auth'd once.
+We use Google's **official, remote-hosted** MCP servers (Developer Preview), not
+third-party local servers. There is nothing to install or run locally for
+Gmail/Calendar — the agent connects over HTTPS to:
+
+- Calendar: `https://calendarmcp.googleapis.com/mcp/v1`
+- Gmail: `https://gmailmcp.googleapis.com/mcp/v1`
+
+The Claude Agent SDK does **not** perform the OAuth flow for these. It only
+forwards a `Authorization: Bearer <access_token>` header. So you create **one**
+Google Cloud OAuth client, obtain a **refresh_token** once, and store
+`{client_id, client_secret, refresh_token}` in
+`~/.config/agent-manager/google-oauth.json`. The agent's token manager
+(`src/googleAuth.ts`) exchanges the refresh_token for short-lived access tokens
+at runtime and injects them into both Google MCP servers.
 
 > ⚠️ **GOTCHA:** the Calendar OAuth scope is **not per-calendar** — granting
-> `calendar` gives technical write access to *all* your calendars. The "read
-> everything / write only the AI calendar" boundary is enforced only by the
-> agent's prompt (accepted risk, see TASK-30). Gmail is requested as
-> **read-only** (`gmail.readonly`).
+> `calendar.events` (write) gives technical write access to *all* your
+> calendars. The "read everything / write only the AI calendar" boundary is
+> enforced only by the agent's prompt (accepted risk, see TASK-30). Gmail is
+> requested **read-only** (`gmail.readonly`).
 
-### 2.1 Create the Google Cloud project + enable APIs
+> ⏱️ **GOTCHA (token lifetime):** Google access tokens live ~1 hour. The host
+> fetches a token at **startup** and injects it once; the token manager caches +
+> refreshes it for future (re)connections. The SDK exposes no hook to swap the
+> header on an already-open MCP connection, so a session that has held a Google
+> MCP connection open for >1h may need the host restarted. Mid-session header
+> re-injection is out of MVP scope.
+
+### 2.1 Enroll in the Google Workspace Developer Preview Program
+
+The official MCP servers are in Developer Preview. Enroll your Google account /
+Workspace here first, or the MCP APIs below won't be available:
+
+- <https://developers.google.com/workspace/preview>
+
+> **→ RETURN THIS TO ME:** confirmation that you're enrolled in the
+> Google Workspace Developer Preview Program.
+
+### 2.2 Create the Google Cloud project + enable APIs
 
 1. Go to <https://console.cloud.google.com/> → create a new project (e.g.
    `calendar-agent`).
-2. **APIs & Services → Library**, enable both:
-   - **Gmail API**
+2. **APIs & Services → Library**, enable **all four**:
    - **Google Calendar API**
+   - **Calendar MCP API**
+   - **Gmail API**
+   - **Gmail MCP API**
 
-### 2.2 Configure the OAuth consent screen
+> **→ RETURN THIS TO ME:** confirmation that all four APIs are enabled.
+
+### 2.3 Configure the OAuth consent screen + scopes
 
 1. **APIs & Services → OAuth consent screen.**
 2. User type **External** (unless you have a Workspace org → Internal is fine).
 3. Fill app name + your email.
-4. **Scopes:** add exactly these two:
+4. **Scopes:** add exactly these (Calendar write + reads, Gmail read-only):
+   - `https://www.googleapis.com/auth/calendar.events` (write to AI calendar)
+   - `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
+   - `https://www.googleapis.com/auth/calendar.events.freebusy`
+   - `https://www.googleapis.com/auth/calendar.events.readonly`
    - `https://www.googleapis.com/auth/gmail.readonly`
-   - `https://www.googleapis.com/auth/calendar`
 5. **Test users:** add your own Google account (the one whose mail/calendar the
-   agent reads), otherwise consent will fail while the app is unverified.
+   agent reads), otherwise consent fails while the app is unverified.
 
-### 2.3 Create the OAuth client (Desktop)
+> **Note:** if the official Gmail MCP later rejects `gmail.readonly` at live
+> connect, widen the Gmail scope accordingly and re-run the consent. This can
+> only be confirmed against the live server.
+
+### 2.4 Create the OAuth client (Web application)
+
+For the **Claude** integration the OAuth client type is **Web application**
+(Gemini CLI uses Desktop — we use the Web variant).
 
 1. **APIs & Services → Credentials → Create Credentials → OAuth client ID.**
-2. Application type: **Desktop app.**
-3. Create, then **Download JSON**. This is your `gcp-oauth.keys.json`.
+2. Application type: **Web application.**
+3. Add an **Authorized redirect URI**. The simplest one that works with the
+   OAuth Playground (step 2.5) is:
+   `https://developers.google.com/oauthplayground`
+   (If you instead use your own one-shot script, use
+   `http://localhost:<port>/` and match it there.)
+4. Create. Copy the **Client ID** and **Client secret**.
 
-Place **one copy** where both servers can reach it:
+> **→ RETURN THIS TO ME:** the **Client ID** and **Client secret**.
+
+### 2.5 Obtain a refresh_token (one-time consent)
+
+Easiest path for a Web application client — **Google OAuth 2.0 Playground**:
+
+1. Open <https://developers.google.com/oauthplayground/>.
+2. Top-right **gear ⚙ → "Use your own OAuth credentials"** → paste the Client ID
+   + Client secret from 2.4. (Make sure the Playground redirect URI from 2.3 is
+   authorized on the client.)
+3. In the left **"Step 1 — Select & authorize APIs"** box, paste the scopes from
+   2.3 (space-separated), then **Authorize APIs** → sign in → grant access.
+4. **"Step 2 — Exchange authorization code for tokens"** → **Exchange**. Copy the
+   **Refresh token**.
+
+Alternatively run a tiny one-shot Node script with a `http://localhost:<port>/`
+redirect that prints the refresh token — but the Playground needs no code.
+
+> **→ RETURN THIS TO ME:** the **refresh_token** string.
+
+### 2.6 Store the credentials
 
 ```bash
-mkdir -p ~/.gmail-mcp ~/.config/agent-manager
-# Gmail server expects it here:
-cp ~/Downloads/client_secret_*.json ~/.gmail-mcp/gcp-oauth.keys.json
-# Calendar server reads it via the path you set in the config (env var):
-cp ~/.gmail-mcp/gcp-oauth.keys.json ~/.config/agent-manager/gcp-oauth.keys.json
+mkdir -p ~/.config/agent-manager
+cp calendar-agent/google-oauth.example.json \
+   ~/.config/agent-manager/google-oauth.json
+chmod 600 ~/.config/agent-manager/google-oauth.json
+# then edit it and fill in client_id / client_secret / refresh_token
 ```
 
-> **→ RETURN THIS TO ME:** confirmation that `~/.gmail-mcp/gcp-oauth.keys.json`
-> and `~/.config/agent-manager/gcp-oauth.keys.json` exist (same file content).
-
-### 2.4 Authorize the Gmail MCP server (GongRzhe/Gmail-MCP-Server)
-
-```bash
-npx @gongrzhe/server-gmail-autoauth-mcp auth
-```
-
-A browser window opens → sign in with your Google account → grant access.
-On success the refresh token is written to:
-
-```
-~/.gmail-mcp/credentials.json
-```
-
-> **→ RETURN THIS TO ME:** confirmation that `~/.gmail-mcp/credentials.json`
-> exists after the browser flow.
-
-The config entry the agent uses (already in the example):
+Result — `~/.config/agent-manager/google-oauth.json`:
 
 ```json
-"gmail": {
-  "command": "npx",
-  "args": ["@gongrzhe/server-gmail-autoauth-mcp"],
-  "env": {
-    "GMAIL_OAUTH_PATH": "/home/<you>/.gmail-mcp/gcp-oauth.keys.json",
-    "GMAIL_CREDENTIALS_PATH": "/home/<you>/.gmail-mcp/credentials.json"
-  }
+{
+  "client_id": "...apps.googleusercontent.com",
+  "client_secret": "...",
+  "refresh_token": "..."
 }
 ```
 
-### 2.5 Authorize the Google Calendar MCP server (@cocal/google-calendar-mcp)
-
-```bash
-GOOGLE_OAUTH_CREDENTIALS="$HOME/.config/agent-manager/gcp-oauth.keys.json" \
-  npx @cocal/google-calendar-mcp auth
-```
-
-A browser window opens → grant access. On success the token is written to:
-
-```
-~/.config/google-calendar-mcp/tokens.json
-```
+(Override the path with `$GOOGLE_OAUTH_CREDENTIALS` if you keep it elsewhere.)
 
 > **→ RETURN THIS TO ME:** confirmation that
-> `~/.config/google-calendar-mcp/tokens.json` exists after the browser flow.
+> `~/.config/agent-manager/google-oauth.json` exists with all three fields set.
 
-The config entry the agent uses (already in the example):
+The Calendar + Gmail entries are already in the example config
+(`calendar-agent.config.example.json`) as official remote servers — no
+client_id/secret there, the host injects the bearer at startup:
 
 ```json
-"google-calendar": {
-  "command": "npx",
-  "args": ["@cocal/google-calendar-mcp"],
-  "env": {
-    "GOOGLE_OAUTH_CREDENTIALS": "/home/<you>/.config/agent-manager/gcp-oauth.keys.json"
-  }
+"calendar": {
+  "type": "http",
+  "url": "https://calendarmcp.googleapis.com/mcp/v1",
+  "google": true,
+  "scopes": ["...calendar.events", "...calendar.events.readonly", "..."]
+},
+"gmail": {
+  "type": "http",
+  "url": "https://gmailmcp.googleapis.com/mcp/v1",
+  "google": true,
+  "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
 }
 ```
 
-> **Note on "one OAuth grant":** both servers use the *same* Google Cloud
-> project and OAuth client, so it is one OAuth identity. Technically you run the
-> consent twice (once per server) because each server keeps its own token file;
-> there is no shared-token server that covers both Gmail and Calendar. This is
-> the closest available to the "one grant" requirement with off-the-shelf
-> open-source servers.
-
-### 2.6 Which Gmail senders / labels should the agent read?
+### 2.7 Which Gmail senders / labels should the agent read?
 
 > **→ RETURN THIS TO ME:** the Gmail senders (addresses or domains, e.g.
 > `@yourcompany.com`) and/or labels the agent may read. These go into
@@ -261,21 +295,25 @@ You should see your `mcpServers` and `whitelist` printed back.
 - [ ] `<PATH_TO_UV>` (from `which uv`)
 - [ ] `<PATH_TO_REPO>` (whatsapp-mcp clone path) + bridge running & QR-scanned
 - [ ] WhatsApp group names to whitelist
-- [ ] `~/.gmail-mcp/gcp-oauth.keys.json` + `~/.config/agent-manager/gcp-oauth.keys.json` exist
-- [ ] `~/.gmail-mcp/credentials.json` exists (Gmail auth done)
-- [ ] `~/.config/google-calendar-mcp/tokens.json` exists (Calendar auth done)
+- [ ] Enrolled in Google Workspace Developer Preview Program
+- [ ] Google Cloud APIs enabled: Calendar API + Calendar MCP API + Gmail API + Gmail MCP API
+- [ ] OAuth client (type **Web application**) created → Client ID + Client secret
+- [ ] `refresh_token` obtained (OAuth Playground or one-shot script)
+- [ ] `~/.config/agent-manager/google-oauth.json` exists with `{client_id, client_secret, refresh_token}`
 - [ ] Gmail senders/labels to whitelist
 
 Once these are in place and `~/.config/agent-manager/calendar-agent.json` is
 filled in, AC#1 and AC#2 are satisfied and the host (TASK-28) will connect all
-three MCP servers on start.
+three MCP servers on start (Calendar + Gmail via the injected Google bearer,
+WhatsApp via the local stdio server).
 
 ---
 
 ## References (verified)
 
 - WhatsApp MCP: <https://github.com/lharries/whatsapp-mcp>
-- Gmail MCP: <https://github.com/GongRzhe/Gmail-MCP-Server>
-  (`npm: @gongrzhe/server-gmail-autoauth-mcp`)
-- Google Calendar MCP: <https://github.com/nspady/google-calendar-mcp>
-  (`npm: @cocal/google-calendar-mcp`)
+- Google Workspace Developer Preview Program: <https://developers.google.com/workspace/preview>
+- Official Google Calendar MCP: `https://calendarmcp.googleapis.com/mcp/v1`
+- Official Gmail MCP: `https://gmailmcp.googleapis.com/mcp/v1`
+- Claude Agent SDK — remote MCP auth: <https://code.claude.com/docs/en/agent-sdk/mcp>
+- Google OAuth 2.0 Playground: <https://developers.google.com/oauthplayground/>

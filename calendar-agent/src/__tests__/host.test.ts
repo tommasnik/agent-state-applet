@@ -1,5 +1,11 @@
 import { CalendarAgentHost, SdkQueryFn, SdkMessage } from "../host";
 import { QueueUserMessage } from "../messageQueue";
+import { GoogleTokenManager } from "../googleAuth";
+import {
+  GOOGLE_CALENDAR_MCP_URL,
+  GOOGLE_GMAIL_MCP_URL,
+  McpServerConfig,
+} from "../config";
 
 const STUB_PROMPT = "stub system prompt";
 
@@ -102,6 +108,89 @@ describe("CalendarAgentHost", () => {
     await host.stop();
     expect(host.getStatus()).toBe("stopped");
     expect(host.isSessionAlive()).toBe(false);
+  });
+
+  it("injects the Google bearer header + wildcard allowedTools before query()", async () => {
+    const fake = makeFakeQuery();
+    const tokenMgr = new GoogleTokenManager({
+      credentials: { client_id: "c", client_secret: "s", refresh_token: "r" },
+      fetchToken: async () => ({ access_token: "ACCESS-XYZ", expires_in: 3600 }),
+    });
+    const host = new CalendarAgentHost({
+      config: {
+        mcpServers: {
+          calendar: {
+            type: "http",
+            url: GOOGLE_CALENDAR_MCP_URL,
+            google: true,
+            scopes: ["https://www.googleapis.com/auth/calendar.events"],
+          },
+          gmail: {
+            type: "http",
+            url: GOOGLE_GMAIL_MCP_URL,
+            google: true,
+            scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+          },
+          whatsapp: { command: "/home/tom/.local/bin/uv", args: ["run"] },
+        },
+      },
+      queryFn: fake.query,
+      systemPrompt: STUB_PROMPT,
+      googleTokenManager: tokenMgr,
+    });
+
+    await host.start();
+
+    const opts = fake.lastOptions()!;
+    const servers = opts.mcpServers as Record<string, McpServerConfig>;
+    const cal = servers.calendar as unknown as Record<string, unknown>;
+    const gmail = servers.gmail as unknown as Record<string, unknown>;
+    expect((cal.headers as Record<string, string>).Authorization).toBe(
+      "Bearer ACCESS-XYZ"
+    );
+    expect((gmail.headers as Record<string, string>).Authorization).toBe(
+      "Bearer ACCESS-XYZ"
+    );
+    // marker fields stripped before reaching the SDK
+    expect(cal.google).toBeUndefined();
+    expect(cal.scopes).toBeUndefined();
+    // whatsapp stdio entry untouched (no Authorization)
+    expect(servers.whatsapp).toMatchObject({
+      command: "/home/tom/.local/bin/uv",
+    });
+
+    const allowed = opts.allowedTools as string[];
+    expect(allowed.sort()).toEqual([
+      "mcp__calendar__*",
+      "mcp__gmail__*",
+      "mcp__whatsapp__*",
+    ]);
+
+    await host.stop();
+  });
+
+  it("does not fetch a Google token when no Google server is configured", async () => {
+    const fake = makeFakeQuery();
+    let fetched = false;
+    const tokenMgr = new GoogleTokenManager({
+      credentials: { client_id: "c", client_secret: "s", refresh_token: "r" },
+      fetchToken: async () => {
+        fetched = true;
+        return { access_token: "x", expires_in: 3600 };
+      },
+    });
+    const host = new CalendarAgentHost({
+      config: { mcpServers: { whatsapp: { command: "uv" } } },
+      queryFn: fake.query,
+      systemPrompt: STUB_PROMPT,
+      googleTokenManager: tokenMgr,
+    });
+    await host.start();
+    expect(fetched).toBe(false);
+    expect((fake.lastOptions()!.allowedTools as string[])).toEqual([
+      "mcp__whatsapp__*",
+    ]);
+    await host.stop();
   });
 
   it("AC#3: filterInputs gates inputs through the configured whitelist", () => {

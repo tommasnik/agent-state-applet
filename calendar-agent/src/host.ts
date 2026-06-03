@@ -1,4 +1,10 @@
-import { CalendarAgentConfig, McpServerConfig } from "./config";
+import {
+  CalendarAgentConfig,
+  McpServerConfig,
+  googleServerNames,
+  injectGoogleBearer,
+} from "./config";
+import { GoogleTokenManager } from "./googleAuth";
 import { loadSystemPrompt } from "./prompt";
 import { MessageQueue, QueueUserMessage } from "./messageQueue";
 import { AgentInput, filterInputs, WhitelistConfig } from "./whitelist";
@@ -20,6 +26,7 @@ export type SdkQueryFn = (args: {
     systemPrompt?: string;
     model?: string;
     mcpServers?: Record<string, McpServerConfig>;
+    allowedTools?: string[];
     [key: string]: unknown;
   };
 }) => AsyncIterable<SdkMessage>;
@@ -57,6 +64,15 @@ export interface CalendarAgentHostOptions {
   /** Optional correlation hints attached to registered approvals. */
   runId?: number | null;
   sessionId?: string | null;
+  /**
+   * Google OAuth token manager. The official Google remote MCP servers
+   * (Calendar / Gmail) need a `Bearer <access_token>` header which the SDK does
+   * NOT obtain on its own. The host calls this before opening the session to
+   * get a fresh access token and inject it into the Google servers' headers.
+   * Tests inject a manager with a stubbed token transport; if omitted, one is
+   * created lazily ONLY when the config actually contains Google servers.
+   */
+  googleTokenManager?: GoogleTokenManager;
 }
 
 /**
@@ -90,6 +106,7 @@ export class CalendarAgentHost {
   private readonly bridge?: ApprovalBridge;
   private readonly runId?: number | null;
   private readonly sessionId?: string | null;
+  private googleTokenManager?: GoogleTokenManager;
 
   constructor(opts: CalendarAgentHostOptions) {
     // Be defensive: a config without an explicit whitelist gets the empty
@@ -106,6 +123,7 @@ export class CalendarAgentHost {
     this.bridge = opts.bridge;
     this.runId = opts.runId;
     this.sessionId = opts.sessionId;
+    this.googleTokenManager = opts.googleTokenManager;
   }
 
   getStatus(): HostStatus {
@@ -120,6 +138,16 @@ export class CalendarAgentHost {
   /** Names of MCP servers that were configured for this host. */
   configuredMcpServers(): string[] {
     return Object.keys(this.config.mcpServers);
+  }
+
+  /**
+   * Wildcard `allowedTools` entries for every configured MCP server, e.g.
+   * `mcp__calendar__*`. WITHOUT these the SDK lets Claude SEE the MCP tools but
+   * never CALL them — required for headless / unattended operation. The server
+   * names must match the keys in `mcpServers`.
+   */
+  allowedTools(): string[] {
+    return this.configuredMcpServers().map((name) => `mcp__${name}__*`);
   }
 
   /** The active input whitelist (TASK-29 AC#3). */
@@ -222,6 +250,12 @@ export class CalendarAgentHost {
 
     const query = this.queryFn ?? (await loadSdkQuery());
 
+    // Resolve the Google bearer token (if any Google remote MCP server is
+    // configured) and inject it into those servers' Authorization headers. The
+    // SDK does not perform OAuth for remote MCP servers — we must supply the
+    // bearer ourselves. Non-Google servers (WhatsApp stdio) pass through.
+    const mcpServers = await this.resolveMcpServers();
+
     // Seed the loop skeleton: one run = walk whitelist inputs -> reasoning ->
     // write to AI calendar / escalate. The concrete whitelist gathering and
     // streaming input are TASK-31/TASK-32; here we kick off the session and
@@ -231,13 +265,46 @@ export class CalendarAgentHost {
       options: {
         systemPrompt: this.systemPrompt,
         model: this.config.model,
-        mcpServers: this.config.mcpServers,
+        mcpServers,
+        // Wildcards so Claude may actually CALL the MCP tools (not just see
+        // them). Without this the headless agent never invokes a tool.
+        allowedTools: this.allowedTools(),
       },
     });
 
     this.status = "running";
     this.runLoop = this.drain(stream);
     // Intentionally do NOT await this.runLoop — the session is long-lived.
+  }
+
+  /**
+   * Resolve the final `mcpServers` map handed to the SDK. If any server is a
+   * Google remote server, fetch a fresh access token via the token manager and
+   * inject `Authorization: Bearer <token>` into those servers' headers.
+   *
+   * NOTE on long-lived sessions: the access token is fetched ONCE here at
+   * startup. The session may outlive the token's validity (Google access tokens
+   * are ~1h). The SDK does not expose a hook to re-inject headers on a live MCP
+   * connection, so full mid-session re-injection is out of MVP scope. The token
+   * manager caches + refreshes for any FUTURE (re)connections; a connection
+   * that has already been open for >1h may need the host to be restarted. This
+   * limitation is documented in docs/SETUP.md.
+   */
+  private async resolveMcpServers(): Promise<
+    Record<string, McpServerConfig>
+  > {
+    const googleNames = googleServerNames(this.config.mcpServers);
+    if (googleNames.length === 0) {
+      return this.config.mcpServers;
+    }
+    if (!this.googleTokenManager) {
+      this.googleTokenManager = new GoogleTokenManager();
+    }
+    const accessToken = await this.googleTokenManager.getAccessToken();
+    console.log(
+      `[calendar-agent] injected Google bearer for: ${googleNames.join(", ")}`
+    );
+    return injectGoogleBearer(this.config.mcpServers, accessToken);
   }
 
   /** Consume SDK messages until the session ends (queue closed). */
@@ -256,8 +323,32 @@ export class CalendarAgentHost {
    * notifying the approval queue) is layered on in TASK-30/31/33. For the
    * scaffold we only react to result messages so the loop is observable.
    */
-  protected onMessage(_msg: SdkMessage): void {
-    // no-op scaffold; overridden / extended by later tasks
+  protected onMessage(msg: SdkMessage): void {
+    // Log MCP connection status from the SDK's init/system message so we can see
+    // which servers connected vs. failed (e.g. a stale Google bearer → failed).
+    this.logMcpStatus(msg);
+  }
+
+  /**
+   * If the message is the SDK `system`/`init` message, log each MCP server's
+   * connection status (`connected` / `failed` / etc.). The init message carries
+   * `mcp_servers: [{ name, status }]`.
+   */
+  private logMcpStatus(msg: SdkMessage): void {
+    const isInit =
+      msg.type === "system" &&
+      (msg.subtype === "init" || msg.subtype === undefined);
+    const servers = (msg as { mcp_servers?: unknown }).mcp_servers;
+    if (!isInit || !Array.isArray(servers)) return;
+    for (const s of servers as Array<Record<string, unknown>>) {
+      const name = typeof s.name === "string" ? s.name : "(unknown)";
+      const status = typeof s.status === "string" ? s.status : "(unknown)";
+      const ok = status === "connected";
+      console.log(
+        `[calendar-agent] MCP server "${name}": ${status}` +
+          (ok ? "" : " — NOT connected")
+      );
+    }
   }
 
   /** Stop the host: close the queue so the SDK session can terminate. */

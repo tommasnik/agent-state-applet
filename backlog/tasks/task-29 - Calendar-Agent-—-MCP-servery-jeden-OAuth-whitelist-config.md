@@ -46,23 +46,44 @@ Zprovoznit a nakonfigurovat 3 MCP servery, které host připojuje, a whitelist v
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-AC#1 a AC#2 vyžadují **živou interaktivní autentizaci** (naskenování WhatsApp QR
-telefonem, vytvoření Google Cloud projektu + OAuth consent v prohlížeči), kterou
-musí provést uživatel. Implementace + MCP wiring + přesný step-by-step návod jsou
+**ZMĚNA návrhu (schváleno uživatelem):** Gmail + Calendar přepnuty z third-party
+lokálních MCP serverů na **oficiální Google remote-hosted MCP servery**
+(Developer Preview). WhatsApp zůstává lokální (oficiální MCP pro něj neexistuje).
+
+AC#1 a AC#2 stále vyžadují **živou interaktivní autentizaci** (naskenování
+WhatsApp QR telefonem; u Google: enrollment do Developer Preview, zapnutí API,
+OAuth consent + získání refresh_tokenu v prohlížeči), kterou musí provést
+uživatel. Implementace + MCP wiring + token manager + step-by-step návod jsou
 hotové a čekají na tyto auth kroky:
 
-- MCP wiring pro všechny 3 servery (whatsapp-mcp, Gmail, Google Calendar) je
-  připraven v `calendar-agent/calendar-agent.config.example.json` a načítá se přes
-  `config.ts` (`loadConfig`).
+- MCP wiring: `calendar-agent.config.example.json` — Calendar + Gmail jako
+  `type: "http"` na oficiální endpointy
+  (`https://calendarmcp.googleapis.com/mcp/v1`,
+  `https://gmailmcp.googleapis.com/mcp/v1`) s `google: true` + `scopes`;
+  WhatsApp lokální stdio (reálné cesty: `/home/tom/.local/bin/uv`,
+  `/home/tom/work/external/whatsapp-mcp/...`). Načítá se přes `config.ts`.
+- Google OAuth token manager: `src/googleAuth.ts` — čte
+  `~/.config/agent-manager/google-oauth.json`
+  (`{client_id, client_secret, refresh_token}`, override `$GOOGLE_OAUTH_CREDENTIALS`),
+  vyměňuje refresh_token → access_token přes `https://oauth2.googleapis.com/token`,
+  cachuje s expirací (refresh 60 s před vypršením), injektovatelný transport pro
+  testy. Host (`host.ts`) si token vyzvedne PŘED `query()` a vloží
+  `Authorization: Bearer <token>` do hlaviček Google serverů
+  (`injectGoogleBearer`), nastaví `allowedTools` wildcardy
+  (`mcp__<server>__*`) a loguje MCP connection status z init zprávy.
+  Limit: access token se získává jednou při startu (Google tokeny ~1 h); plný
+  re-inject za běhu MCP spojení je mimo MVP (zdokumentováno v SETUP.md).
 - Návod krok-za-krokem: `calendar-agent/docs/SETUP.md` (sekce „→ RETURN THIS TO ME“
-  označují, co přesně uživatel musí vrátit pro dokončení AC#1/#2).
+  označují, co přesně uživatel musí vrátit pro dokončení AC#1/#2). Příklad
+  Google creds: `calendar-agent/google-oauth.example.json`.
 - Re-auth WhatsApp (AC#4): `calendar-agent/docs/WHATSAPP-REAUTH.md`.
 - Whitelist filtr (AC#3): `calendar-agent/src/whitelist.ts` + integrace v
   `config.ts`/`host.ts`, testy v `src/__tests__/whitelist.test.ts`.
 
 Po dodání auth hodnot ze SETUP.md se AC#1/#2 uzavřou bez další implementace.
 
-Ověřené balíčky: Gmail = `@gongrzhe/server-gmail-autoauth-mcp`
-(GongRzhe/Gmail-MCP-Server), Calendar = `@cocal/google-calendar-mcp`
-(nspady/google-calendar-mcp), WhatsApp = lharries/whatsapp-mcp.
+Oficiální endpointy: Calendar = `https://calendarmcp.googleapis.com/mcp/v1`,
+Gmail = `https://gmailmcp.googleapis.com/mcp/v1`. WhatsApp = lharries/whatsapp-mcp
+(lokální). Third-party `@gongrzhe/server-gmail-autoauth-mcp` a
+`@cocal/google-calendar-mcp` byly odstraněny.
 <!-- SECTION:NOTES:END -->

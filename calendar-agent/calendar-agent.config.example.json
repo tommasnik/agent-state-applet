@@ -3,40 +3,42 @@
 
   "model": "claude-sonnet-4-5",
 
-  "_comment_mcpServers": "Three MCP servers the host connects. WhatsApp bridge MUST already be running and authenticated before the agent starts (see docs/SETUP.md). Gmail + Calendar share ONE Google Cloud OAuth project / one gcp-oauth.keys.json, but each server keeps its own token store and must be auth'd once each.",
+  "_comment_mcpServers": "Three MCP servers the host connects. Calendar + Gmail are the OFFICIAL Google remote MCP servers (type: http) — the host injects a `Authorization: Bearer <access_token>` header at startup from the Google OAuth token manager (see google-oauth.example.json + docs/SETUP.md). Do NOT put client_id/secret/token here. WhatsApp is the local lharries/whatsapp-mcp stdio server and MUST already be running + authenticated before the agent starts.",
   "mcpServers": {
-    "_comment_whatsapp": "lharries/whatsapp-mcp Python server, launched via uv. <PATH_TO_UV> = output of `which uv`. <PATH_TO_REPO> = where you cloned whatsapp-mcp. The Go bridge (whatsapp-bridge/main.go) runs SEPARATELY and is NOT started here.",
-    "whatsapp": {
-      "command": "<PATH_TO_UV>",
-      "args": [
-        "--directory",
-        "<PATH_TO_REPO>/whatsapp-mcp/whatsapp-mcp-server",
-        "run",
-        "main.py"
+    "_comment_calendar": "Official Google Calendar remote MCP (Developer Preview). google:true tells the host to inject the bearer token; scopes are informational (the OAuth grant must already include them). Our agent READS all calendars and WRITES only the AI calendar (boundary enforced by the prompt, see TASK-30) → it needs the calendar.events WRITE scope plus read scopes.",
+    "calendar": {
+      "type": "http",
+      "url": "https://calendarmcp.googleapis.com/mcp/v1",
+      "google": true,
+      "scopes": [
+        "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+        "https://www.googleapis.com/auth/calendar.events.freebusy",
+        "https://www.googleapis.com/auth/calendar.events.readonly",
+        "https://www.googleapis.com/auth/calendar.events"
       ]
     },
 
-    "_comment_gmail": "GongRzhe/Gmail-MCP-Server via npx. OAuth keys live at ~/.gmail-mcp/gcp-oauth.keys.json and the refresh token at ~/.gmail-mcp/credentials.json after running `npx @gongrzhe/server-gmail-autoauth-mcp auth`. Scope: gmail.readonly.",
+    "_comment_gmail": "Official Gmail remote MCP (Developer Preview). Our agent only READS Gmail → gmail.readonly. (If the official Gmail MCP rejects readonly at live connect, widen the scope — see docs/SETUP.md.)",
     "gmail": {
-      "command": "npx",
-      "args": ["@gongrzhe/server-gmail-autoauth-mcp"],
-      "env": {
-        "GMAIL_OAUTH_PATH": "<HOME>/.gmail-mcp/gcp-oauth.keys.json",
-        "GMAIL_CREDENTIALS_PATH": "<HOME>/.gmail-mcp/credentials.json"
-      }
+      "type": "http",
+      "url": "https://gmailmcp.googleapis.com/mcp/v1",
+      "google": true,
+      "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
     },
 
-    "_comment_calendar": "@cocal/google-calendar-mcp (nspady) via npx. Reuse the SAME gcp-oauth.keys.json as Gmail. Token store: ~/.config/google-calendar-mcp/tokens.json after `npx @cocal/google-calendar-mcp auth`. Scope: calendar.",
-    "google-calendar": {
-      "command": "npx",
-      "args": ["@cocal/google-calendar-mcp"],
-      "env": {
-        "GOOGLE_OAUTH_CREDENTIALS": "<HOME>/.config/agent-manager/gcp-oauth.keys.json"
-      }
+    "_comment_whatsapp": "lharries/whatsapp-mcp Python server, launched via uv. The Go bridge (whatsapp-bridge/main.go) runs SEPARATELY and must be running + QR-authenticated first. Paths below are the real verified ones for this machine.",
+    "whatsapp": {
+      "command": "/home/tom/.local/bin/uv",
+      "args": [
+        "--directory",
+        "/home/tom/work/external/whatsapp-mcp/whatsapp-mcp-server",
+        "run",
+        "main.py"
+      ]
     }
   },
 
-  "_comment_whitelist": "Filters inputs BEFORE the agent reasons (AC#3). WhatsApp groups are matched by name (case-insensitive). Gmail passes if the From address contains any sender substring OR the message carries an allowed label. Empty arrays = deny-all.",
+  "_comment_whitelist": "Filters inputs BEFORE the agent reasons (AC#3). WhatsApp groups are matched by name (case-insensitive). Gmail passes if the From address contains any sender substring OR the message carries an allowed label. Empty arrays = deny-all. Replace the placeholders with your real values.",
   "whitelist": {
     "whatsapp": {
       "groups": ["<WA GROUP NAME 1>", "<WA GROUP NAME 2>"]

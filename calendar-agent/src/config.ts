@@ -36,12 +36,39 @@ export interface McpHttpServerConfig {
   type: "http";
   url: string;
   headers?: Record<string, string>;
+  /**
+   * Marks this as an official Google remote MCP server (Calendar / Gmail). The
+   * Agent SDK does NOT perform OAuth for remote MCP servers — it only forwards
+   * a bearer token. So the config does NOT carry the `Authorization` header
+   * itself; instead it declares `google: true` (+ the OAuth `scopes` it needs)
+   * and the host injects `headers.Authorization = "Bearer <accessToken>"` at
+   * startup via the Google token manager (see googleAuth.ts / host.ts).
+   */
+  google?: boolean;
+  /** OAuth scopes this Google server needs (documentation / setup aid). */
+  scopes?: string[];
 }
 
 export type McpServerConfig =
   | McpStdioServerConfig
   | McpSseServerConfig
   | McpHttpServerConfig;
+
+/** Official Google remote MCP endpoints (Developer Preview). */
+export const GOOGLE_CALENDAR_MCP_URL = "https://calendarmcp.googleapis.com/mcp/v1";
+export const GOOGLE_GMAIL_MCP_URL = "https://gmailmcp.googleapis.com/mcp/v1";
+
+/** True if an entry is an http MCP server flagged as Google (needs a bearer). */
+export function isGoogleHttpServer(
+  v: McpServerConfig
+): v is McpHttpServerConfig {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    (v as McpHttpServerConfig).type === "http" &&
+    (v as McpHttpServerConfig).google === true
+  );
+}
 
 export interface CalendarAgentConfig {
   /**
@@ -99,6 +126,48 @@ export function buildMcpServers(
     }
   }
   return out;
+}
+
+/**
+ * Return a shallow copy of the MCP server map with `Authorization: Bearer
+ * <accessToken>` injected into every Google-flagged http server's headers. The
+ * access token is dynamic (refreshed by the token manager) so it is supplied
+ * at call time rather than stored in the config. Non-Google servers (e.g. the
+ * local WhatsApp stdio server) are passed through untouched.
+ *
+ * The internal `google` / `scopes` marker fields are stripped from the result
+ * so only SDK-recognised keys reach `options.mcpServers`.
+ */
+export function injectGoogleBearer(
+  servers: Record<string, McpServerConfig>,
+  accessToken: string
+): Record<string, McpServerConfig> {
+  const out: Record<string, McpServerConfig> = {};
+  for (const [name, server] of Object.entries(servers)) {
+    if (isGoogleHttpServer(server)) {
+      const { google: _g, scopes: _s, ...rest } = server;
+      out[name] = {
+        ...rest,
+        type: "http",
+        headers: {
+          ...(server.headers ?? {}),
+          Authorization: `Bearer ${accessToken}`,
+        },
+      };
+    } else {
+      out[name] = server;
+    }
+  }
+  return out;
+}
+
+/** Names of MCP servers flagged as Google remote (need a bearer token). */
+export function googleServerNames(
+  servers: Record<string, McpServerConfig>
+): string[] {
+  return Object.entries(servers)
+    .filter(([, v]) => isGoogleHttpServer(v))
+    .map(([name]) => name);
 }
 
 /**

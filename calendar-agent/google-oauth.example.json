@@ -1,0 +1,6 @@
+{
+  "_comment": "Google OAuth credentials for the official Google remote MCP servers (Calendar + Gmail). Copy this to ~/.config/agent-manager/google-oauth.json (override path with $GOOGLE_OAUTH_CREDENTIALS) and fill in the three real values. The Calendar Agent host exchanges the refresh_token for short-lived access tokens at runtime and injects them as `Authorization: Bearer ...` into the Google MCP servers. See docs/SETUP.md Part 2 for how to obtain these. Keep this file private (chmod 600).",
+  "client_id": "<GOOGLE_OAUTH_CLIENT_ID>.apps.googleusercontent.com",
+  "client_secret": "<GOOGLE_OAUTH_CLIENT_SECRET>",
+  "refresh_token": "<GOOGLE_OAUTH_REFRESH_TOKEN>"
+}

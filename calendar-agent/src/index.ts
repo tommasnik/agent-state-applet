@@ -23,6 +23,9 @@ async function main(): Promise<void> {
     `[calendar-agent] starting host with ${mcp.length} MCP server(s): ` +
       (mcp.length ? mcp.join(", ") : "(none configured — see TASK-29)")
   );
+  console.log(
+    `[calendar-agent] allowedTools: ${host.allowedTools().join(", ") || "(none)"}`
+  );
 
   await host.start();
   console.log(`[calendar-agent] host status: ${host.getStatus()}`);
