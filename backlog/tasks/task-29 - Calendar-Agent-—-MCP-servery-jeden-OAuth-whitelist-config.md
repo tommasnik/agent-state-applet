@@ -37,8 +37,8 @@ Zprovoznit a nakonfigurovat 3 MCP servery, které host připojuje, a whitelist v
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 whatsapp-mcp bridge je přihlášený a MCP vrací zprávy z whitelistovaných skupin
-- [ ] #2 Gmail i Calendar MCP jsou autorizované jedním OAuth grantem a funkční
+- [x] #1 whatsapp-mcp bridge je přihlášený a MCP vrací zprávy z whitelistovaných skupin
+- [x] #2 Gmail i Calendar MCP jsou autorizované jedním OAuth grantem a funkční
 - [x] #3 Whitelist config soubor řídí které skupiny/odesílatele agent čte
 - [x] #4 Zdokumentovaný postup re-autentizace WhatsApp (~20 dní)
 <!-- AC:END -->
@@ -50,11 +50,18 @@ Zprovoznit a nakonfigurovat 3 MCP servery, které host připojuje, a whitelist v
 lokálních MCP serverů na **oficiální Google remote-hosted MCP servery**
 (Developer Preview). WhatsApp zůstává lokální (oficiální MCP pro něj neexistuje).
 
-AC#1 a AC#2 stále vyžadují **živou interaktivní autentizaci** (naskenování
-WhatsApp QR telefonem; u Google: enrollment do Developer Preview, zapnutí API,
-OAuth consent + získání refresh_tokenu v prohlížeči), kterou musí provést
-uživatel. Implementace + MCP wiring + token manager + step-by-step návod jsou
-hotové a čekají na tyto auth kroky:
+**AC#1 a AC#2 ŽIVĚ OVĚŘENO (2026-06-03):** WhatsApp bridge přihlášený, MCP
+vrací data z whitelistovaných skupin (ověřeno `list_chats`/`list_messages` na
+„Rodiče 67S"). Oba oficiální Google MCP endpointy vrací HTTP 200 na MCP
+`initialize` s bearer tokenem z našeho `GoogleTokenManager` (refresh→access
+ověřeno přes náš TS kód), calendar nabízí `create_event`/`update_event` (write).
+Reálný config: `~/.config/agent-manager/calendar-agent.json` (4 WA skupiny +
+Gmail label „Škola Slunovrat"), creds: `~/.config/agent-manager/google-oauth.json`.
+Refresh token získán loopback skriptem `calendar-agent/scripts/get-refresh-token.py`
+(OAuth Playground dával `unauthorized_client` — refresh token svázán s cizím
+clientem; loopback flow s vlastním clientem to řeší). GOTCHA: OAuth consent screen
+v Testing mode → refresh token vyprší za 7 dní; pro trvalý běh publish app do
+Production. Implementace (auth proběhla takto):
 
 - MCP wiring: `calendar-agent.config.example.json` — Calendar + Gmail jako
   `type: "http"` na oficiální endpointy
