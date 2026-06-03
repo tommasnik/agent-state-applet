@@ -9,6 +9,7 @@
  */
 
 import { loadConfig, configPath } from "./config";
+import { runCalendar, runGmail } from "./commands";
 
 const PROG = "cal-agent";
 
@@ -17,7 +18,7 @@ interface Command {
   summary: string;
   /** Implemented in this task, or a stub placeholder. */
   implemented: boolean;
-  run(args: string[]): number;
+  run(args: string[]): number | Promise<number>;
 }
 
 function usage(): string {
@@ -86,10 +87,28 @@ const configCommand: Command = {
   },
 };
 
+const calendarCommand: Command = {
+  name: "calendar",
+  summary: "Google Calendar: list/get/create/update events",
+  implemented: true,
+  run(args): Promise<number> {
+    return runCalendar(args);
+  },
+};
+
+const gmailCommand: Command = {
+  name: "gmail",
+  summary: "Gmail (read-only): search / get messages",
+  implemented: true,
+  run(args): Promise<number> {
+    return runGmail(args);
+  },
+};
+
 const COMMAND_LIST: Command[] = [
   configCommand,
-  stub("calendar"),
-  stub("gmail"),
+  calendarCommand,
+  gmailCommand,
   stub("wa"),
   stub("approvals"),
 ];
@@ -98,7 +117,7 @@ const COMMANDS: Record<string, Command> = Object.fromEntries(
   COMMAND_LIST.map((c) => [c.name, c])
 );
 
-export function main(argv: string[]): number {
+export async function main(argv: string[]): Promise<number> {
   const args = argv.slice(2);
 
   if (args.length === 0) {
@@ -130,5 +149,11 @@ export function main(argv: string[]): number {
 
 // Only run when invoked directly (not when imported by tests).
 if (require.main === module) {
-  process.exit(main(process.argv));
+  main(process.argv).then(
+    (code) => process.exit(code),
+    (e) => {
+      process.stderr.write(`${PROG}: ${String(e)}\n`);
+      process.exit(1);
+    }
+  );
 }
