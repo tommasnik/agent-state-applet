@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { to: "/projects", label: "Projects" },
   { to: "/prompts", label: "Prompts" },
   { to: "/runs", label: "Runs" },
+  { to: "/approvals", label: "Approvals" },
 ];
 
 export function Sidebar() {
