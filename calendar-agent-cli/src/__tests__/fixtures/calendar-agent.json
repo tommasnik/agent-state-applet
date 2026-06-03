@@ -1,0 +1,19 @@
+{
+  "model": "claude-sonnet-4-5",
+  "aiCalendarId": "fixture-cal-id@group.calendar.google.com",
+  "mcpServers": {
+    "whatsapp": {
+      "command": "/bin/true",
+      "args": []
+    }
+  },
+  "whitelist": {
+    "whatsapp": {
+      "groups": ["Rodiče 67S", "Slunovratí tábor 2025"]
+    },
+    "gmail": {
+      "senders": ["school@example.com"],
+      "labels": ["Škola Slunovrat"]
+    }
+  }
+}
