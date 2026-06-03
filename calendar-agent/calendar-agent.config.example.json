@@ -3,30 +3,10 @@
 
   "model": "claude-sonnet-4-5",
 
-  "_comment_mcpServers": "Three MCP servers the host connects. Calendar + Gmail are the OFFICIAL Google remote MCP servers (type: http) — the host injects a `Authorization: Bearer <access_token>` header at startup from the Google OAuth token manager (see google-oauth.example.json + docs/SETUP.md). Do NOT put client_id/secret/token here. WhatsApp is the local lharries/whatsapp-mcp stdio server and MUST already be running + authenticated before the agent starts.",
+  "_comment_calendar_gmail": "Calendar + Gmail are NOT configured here. They are exposed as IN-PROCESS SDK MCP tools (servers `calendar` + `gmail`) built by the host over the raw Google REST APIs (calendar/v3, gmail/v1). We do NOT use the official Google remote MCP servers — they are gated behind the Google Workspace Developer Preview and reject personal @gmail accounts. The only thing you provide is OAuth credentials at ~/.config/agent-manager/google-oauth.json (client_id, client_secret, refresh_token); the host's token manager exchanges them for short-lived access tokens at runtime. See docs/SETUP.md, Part 2.",
+
+  "_comment_mcpServers": "Only the local WhatsApp stdio server is configured here. It is the lharries/whatsapp-mcp Python server, launched via uv. The Go bridge (whatsapp-bridge/main.go) runs SEPARATELY and must be running + QR-authenticated first. Paths below are the real verified ones for this machine.",
   "mcpServers": {
-    "_comment_calendar": "Official Google Calendar remote MCP (Developer Preview). google:true tells the host to inject the bearer token; scopes are informational (the OAuth grant must already include them). Our agent READS all calendars and WRITES only the AI calendar (boundary enforced by the prompt, see TASK-30) → it needs the calendar.events WRITE scope plus read scopes.",
-    "calendar": {
-      "type": "http",
-      "url": "https://calendarmcp.googleapis.com/mcp/v1",
-      "google": true,
-      "scopes": [
-        "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-        "https://www.googleapis.com/auth/calendar.events.freebusy",
-        "https://www.googleapis.com/auth/calendar.events.readonly",
-        "https://www.googleapis.com/auth/calendar.events"
-      ]
-    },
-
-    "_comment_gmail": "Official Gmail remote MCP (Developer Preview). Our agent only READS Gmail → gmail.readonly. (If the official Gmail MCP rejects readonly at live connect, widen the scope — see docs/SETUP.md.)",
-    "gmail": {
-      "type": "http",
-      "url": "https://gmailmcp.googleapis.com/mcp/v1",
-      "google": true,
-      "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
-    },
-
-    "_comment_whatsapp": "lharries/whatsapp-mcp Python server, launched via uv. The Go bridge (whatsapp-bridge/main.go) runs SEPARATELY and must be running + QR-authenticated first. Paths below are the real verified ones for this machine.",
     "whatsapp": {
       "command": "/home/tom/.local/bin/uv",
       "args": [

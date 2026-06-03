@@ -4,7 +4,7 @@ title: Calendar Agent — MCP servery + jeden OAuth + whitelist config
 status: In Progress
 assignee: []
 created_date: '2026-06-03 08:42'
-updated_date: '2026-06-03 10:10'
+updated_date: '2026-06-03 12:01'
 labels: []
 dependencies:
   - TASK-28
@@ -93,4 +93,51 @@ Oficiální endpointy: Calendar = `https://calendarmcp.googleapis.com/mcp/v1`,
 Gmail = `https://gmailmcp.googleapis.com/mcp/v1`. WhatsApp = lharries/whatsapp-mcp
 (lokální). Third-party `@gongrzhe/server-gmail-autoauth-mcp` a
 `@cocal/google-calendar-mcp` byly odstraněny.
+
+---
+
+**ZMĚNA #2 (schváleno uživatelem, 2026-06-03) — odchod od oficiálních Google
+remote MCP serverů k vlastním in-process SDK tools nad Google REST API:**
+
+ŽIVĚ OVĚŘENO, že oficiální Google remote MCP servery (`calendarmcp` /
+`gmailmcp.googleapis.com`) jsou pod **Google Workspace Developer Preview
+Programem**, který **vyžaduje Workspace účet — osobní @gmail.com je nezpůsobilý**.
+MCP `initialize` projde, ale každé reálné volání nástroje vrací „The caller does
+not have permission". Naproti tomu **raw Google REST API** (calendar/v3, gmail/v1)
+s naším OAuth tokenem fungují perfektně (HTTP 200 ověřeno).
+
+Řešení: Calendar + Gmail nově jako **vlastní in-process SDK MCP tools** (`tool()`
++ `createSdkMcpServer()` z Agent SDK) nad raw Google REST API — `src/googleTools.ts`.
+Žádné remote MCP. Token se bere z `GoogleTokenManager` (beze změny), a to
+**per-call uvnitř každého handleru** (cache + auto-refresh) → řeší i token expiry
+v dlouhoběžící session, žádný startup-only bearer ani restart po ~1 h.
+
+- `src/googleTools.ts`: `buildGoogleMcpServers()` staví dva servery `calendar`
+  (list_calendars/list_events/get_event + create/update/delete_event) a `gmail`
+  (list_messages/get_message/list_labels, read-only). Read tools mají
+  `readOnlyHint:true`. Write tools vyžadují explicitní `calendarId` (agent ho
+  zjistí z list_calendars; hranice „jen AI kalendář" je v promptu — TASK-30,
+  nehardcoduje se). Handlery NIKDY nethrowují — chyba se vrací jako
+  `{content, isError:true}`. fetch + tokenManager injektovatelné pro testy.
+- `host.ts`: `resolveMcpServers()` slučuje native in-process Google servery se
+  stdio servery z configu (`{calendar, gmail, whatsapp}`). `allowedTools()` +
+  `configuredMcpServers()` pokrývají i native Google servery, i když už nejsou
+  v config JSON. Odstraněna mrtvá remote-google logika (`injectGoogleBearer`,
+  `googleServerNames`, `isGoogleHttpServer`, `GOOGLE_*_MCP_URL`, marker pole
+  `google`/`scopes`) z `config.ts`. `GoogleTokenManager` zachován.
+- Config: z `calendar-agent.config.example.json` i z reálného
+  `~/.config/agent-manager/calendar-agent.json` odebrány http calendar/gmail
+  entries (zůstal whatsapp stdio + whitelist beze změny). Calendar+Gmail
+  potřebují už jen `~/.config/agent-manager/google-oauth.json`.
+- `docs/SETUP.md` (Part 2) přepsán: žádný Developer Preview / MCP API / Workspace.
+  Stačí zapnout Google Calendar API + Gmail API, OAuth client, refresh_token →
+  funguje s osobním @gmail. Přidán krok: ručně vytvořit vyhrazený „AI" kalendář
+  (scope calendar.events neumí vytvořit kalendář), agent ho najde přes
+  list_calendars dle jména.
+- `scripts/dry-run.mjs` přestaven na in-process tools (read-only allowlist:
+  calendar list/get + gmail list/get + whatsapp list/get).
+- Testy: nový `src/__tests__/googleTools.test.ts` (mock fetch + tokenManager,
+  ověřuje URL/metodu/body/Authorization každého toolu, isError na non-2xx bez
+  throwu, readOnlyHint). Upraveny `host.test.ts` + `config.test.ts`. `npm run
+  build` + `npm test` zelené (66 testů). Přidána dependency `zod`.
 <!-- SECTION:NOTES:END -->

@@ -1,16 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import {
-  buildMcpServers,
-  loadConfig,
-  injectGoogleBearer,
-  googleServerNames,
-  isGoogleHttpServer,
-  GOOGLE_CALENDAR_MCP_URL,
-  GOOGLE_GMAIL_MCP_URL,
-  McpServerConfig,
-} from "../config";
+import { buildMcpServers, loadConfig } from "../config";
 
 describe("config / MCP server assembly", () => {
   it("imports and exposes the config API", () => {
@@ -21,16 +12,16 @@ describe("config / MCP server assembly", () => {
   it("builds an MCP server map from a passed list (stdio, sse, http)", () => {
     const servers = buildMcpServers({
       whatsapp: { command: "whatsapp-mcp", args: ["--stdio"] },
-      gmail: { type: "sse", url: "http://localhost:5001/sse" },
-      calendar: { type: "http", url: "http://localhost:5002" },
+      remote: { type: "sse", url: "http://localhost:5001/sse" },
+      other: { type: "http", url: "http://localhost:5002" },
     });
     expect(Object.keys(servers).sort()).toEqual([
-      "calendar",
-      "gmail",
+      "other",
+      "remote",
       "whatsapp",
     ]);
     expect(servers.whatsapp).toMatchObject({ command: "whatsapp-mcp" });
-    expect(servers.gmail).toMatchObject({ type: "sse" });
+    expect(servers.remote).toMatchObject({ type: "sse" });
   });
 
   it("drops malformed MCP entries", () => {
@@ -65,62 +56,7 @@ describe("config / MCP server assembly", () => {
     }
   });
 
-  it("keeps google http entries (url + google flag + scopes) and whatsapp stdio", () => {
-    const servers = buildMcpServers({
-      calendar: {
-        type: "http",
-        url: GOOGLE_CALENDAR_MCP_URL,
-        google: true,
-        scopes: ["https://www.googleapis.com/auth/calendar.events"],
-      },
-      gmail: {
-        type: "http",
-        url: GOOGLE_GMAIL_MCP_URL,
-        google: true,
-        scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
-      },
-      whatsapp: { command: "/home/tom/.local/bin/uv", args: ["run", "main.py"] },
-    });
-    expect(Object.keys(servers).sort()).toEqual([
-      "calendar",
-      "gmail",
-      "whatsapp",
-    ]);
-    expect(servers.calendar).toMatchObject({
-      type: "http",
-      url: GOOGLE_CALENDAR_MCP_URL,
-      google: true,
-    });
-    expect(googleServerNames(servers).sort()).toEqual(["calendar", "gmail"]);
-    expect(isGoogleHttpServer(servers.calendar)).toBe(true);
-    expect(isGoogleHttpServer(servers.whatsapp)).toBe(false);
-  });
-
-  it("injectGoogleBearer adds Bearer header to google servers, strips markers, leaves others", () => {
-    const servers: Record<string, McpServerConfig> = {
-      calendar: {
-        type: "http",
-        url: GOOGLE_CALENDAR_MCP_URL,
-        google: true,
-        scopes: ["https://www.googleapis.com/auth/calendar.events"],
-      },
-      whatsapp: { command: "uv", args: ["run", "main.py"] },
-    };
-    const out = injectGoogleBearer(servers, "tok-123");
-    const cal = out.calendar as unknown as Record<string, unknown>;
-    expect((cal.headers as Record<string, string>).Authorization).toBe(
-      "Bearer tok-123"
-    );
-    // internal marker fields must not leak to the SDK
-    expect(cal.google).toBeUndefined();
-    expect(cal.scopes).toBeUndefined();
-    expect(cal.type).toBe("http");
-    expect(cal.url).toBe(GOOGLE_CALENDAR_MCP_URL);
-    // non-google entry untouched (still stdio)
-    expect(out.whatsapp).toEqual(servers.whatsapp);
-  });
-
-  it("loadConfig parses MCP servers + whitelist from a config file", () => {
+  it("loadConfig parses only the whatsapp stdio server + whitelist (no calendar/gmail in JSON)", () => {
     const prev = process.env.CALENDAR_AGENT_CONFIG;
     const tmp = path.join(os.tmpdir(), `ca-config-${Date.now()}.json`);
     fs.writeFileSync(
@@ -129,12 +65,6 @@ describe("config / MCP server assembly", () => {
         model: "claude-x",
         mcpServers: {
           whatsapp: { command: "uv", args: ["run", "main.py"] },
-          gmail: {
-            type: "http",
-            url: GOOGLE_GMAIL_MCP_URL,
-            google: true,
-            scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
-          },
         },
         whitelist: {
           whatsapp: { groups: ["Family"] },
@@ -146,7 +76,8 @@ describe("config / MCP server assembly", () => {
     try {
       const cfg = loadConfig();
       expect(cfg.model).toBe("claude-x");
-      expect(Object.keys(cfg.mcpServers).sort()).toEqual(["gmail", "whatsapp"]);
+      // Calendar + Gmail are NOT configured here — host builds them in-process.
+      expect(Object.keys(cfg.mcpServers)).toEqual(["whatsapp"]);
       expect(cfg.whitelist.whatsapp.groups).toEqual(["Family"]);
       expect(cfg.whitelist.gmail.senders).toEqual(["@daktela.com"]);
       expect(cfg.whitelist.gmail.labels).toEqual(["Important"]);

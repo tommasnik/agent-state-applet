@@ -100,6 +100,7 @@ describe("streaming input bridge ↔ host (TASK-32)", () => {
       queryFn: fake.query,
       systemPrompt: STUB_PROMPT,
       bridge,
+      disableGoogle: true,
     });
     await host.start();
 
@@ -137,6 +138,7 @@ describe("streaming input bridge ↔ host (TASK-32)", () => {
       queryFn: fake.query,
       systemPrompt: STUB_PROMPT,
       bridge,
+      disableGoogle: true,
     });
     await host.start();
 
@@ -190,6 +192,7 @@ describe("streaming input bridge ↔ host (TASK-32)", () => {
       queryFn: fake.query,
       systemPrompt: STUB_PROMPT,
       bridge,
+      disableGoogle: true,
     });
     await host.start();
 
@@ -230,6 +233,7 @@ describe("streaming input bridge ↔ host (TASK-32)", () => {
       queryFn: fake.query,
       systemPrompt: STUB_PROMPT,
       bridge,
+      disableGoogle: true,
     });
     await host.start();
 

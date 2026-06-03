@@ -1,13 +1,14 @@
 import { CalendarAgentHost, SdkQueryFn, SdkMessage } from "../host";
 import { QueueUserMessage } from "../messageQueue";
-import { GoogleTokenManager } from "../googleAuth";
-import {
-  GOOGLE_CALENDAR_MCP_URL,
-  GOOGLE_GMAIL_MCP_URL,
-  McpServerConfig,
-} from "../config";
+import { GoogleMcpServers } from "../googleTools";
 
 const STUB_PROMPT = "stub system prompt";
+
+/** Stub in-process Google MCP servers (avoids loading the ESM SDK in tests). */
+const STUB_GOOGLE: GoogleMcpServers = {
+  calendar: { name: "calendar" },
+  gmail: { name: "gmail" },
+};
 
 /**
  * A fake SDK `query()` that records the options it was called with and then
@@ -44,26 +45,31 @@ describe("CalendarAgentHost", () => {
     expect(typeof CalendarAgentHost).toBe("function");
   });
 
-  it("AC#1: passes the configured MCP servers + prompt into the SDK on start", async () => {
+  it("AC#1: merges native Google servers with the configured stdio server + prompt", async () => {
     const fake = makeFakeQuery();
     const host = new CalendarAgentHost({
       config: {
         mcpServers: {
           whatsapp: { command: "whatsapp-mcp" },
-          gmail: { type: "http", url: "http://localhost:5002" },
         },
         model: "claude-test",
       },
       queryFn: fake.query,
       systemPrompt: STUB_PROMPT,
+      googleMcpServers: STUB_GOOGLE,
     });
 
-    expect(host.configuredMcpServers().sort()).toEqual(["gmail", "whatsapp"]);
+    expect(host.configuredMcpServers().sort()).toEqual([
+      "calendar",
+      "gmail",
+      "whatsapp",
+    ]);
 
     await host.start();
 
     const opts = fake.lastOptions()!;
     expect(Object.keys(opts.mcpServers as object).sort()).toEqual([
+      "calendar",
       "gmail",
       "whatsapp",
     ]);
@@ -79,6 +85,7 @@ describe("CalendarAgentHost", () => {
       config: { mcpServers: {} },
       queryFn: fake.query,
       systemPrompt: STUB_PROMPT,
+      disableGoogle: true,
     });
 
     await host.start();
@@ -110,51 +117,27 @@ describe("CalendarAgentHost", () => {
     expect(host.isSessionAlive()).toBe(false);
   });
 
-  it("injects the Google bearer header + wildcard allowedTools before query()", async () => {
+  it("wires the in-process Google servers + wildcard allowedTools (calendar/gmail/whatsapp)", async () => {
     const fake = makeFakeQuery();
-    const tokenMgr = new GoogleTokenManager({
-      credentials: { client_id: "c", client_secret: "s", refresh_token: "r" },
-      fetchToken: async () => ({ access_token: "ACCESS-XYZ", expires_in: 3600 }),
-    });
     const host = new CalendarAgentHost({
       config: {
         mcpServers: {
-          calendar: {
-            type: "http",
-            url: GOOGLE_CALENDAR_MCP_URL,
-            google: true,
-            scopes: ["https://www.googleapis.com/auth/calendar.events"],
-          },
-          gmail: {
-            type: "http",
-            url: GOOGLE_GMAIL_MCP_URL,
-            google: true,
-            scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
-          },
           whatsapp: { command: "/home/tom/.local/bin/uv", args: ["run"] },
         },
       },
       queryFn: fake.query,
       systemPrompt: STUB_PROMPT,
-      googleTokenManager: tokenMgr,
+      googleMcpServers: STUB_GOOGLE,
     });
 
     await host.start();
 
     const opts = fake.lastOptions()!;
-    const servers = opts.mcpServers as Record<string, McpServerConfig>;
-    const cal = servers.calendar as unknown as Record<string, unknown>;
-    const gmail = servers.gmail as unknown as Record<string, unknown>;
-    expect((cal.headers as Record<string, string>).Authorization).toBe(
-      "Bearer ACCESS-XYZ"
-    );
-    expect((gmail.headers as Record<string, string>).Authorization).toBe(
-      "Bearer ACCESS-XYZ"
-    );
-    // marker fields stripped before reaching the SDK
-    expect(cal.google).toBeUndefined();
-    expect(cal.scopes).toBeUndefined();
-    // whatsapp stdio entry untouched (no Authorization)
+    const servers = opts.mcpServers as Record<string, unknown>;
+    // Native Google servers are the in-process SDK servers, not http configs.
+    expect(servers.calendar).toBe(STUB_GOOGLE.calendar);
+    expect(servers.gmail).toBe(STUB_GOOGLE.gmail);
+    // whatsapp stdio entry passed through untouched.
     expect(servers.whatsapp).toMatchObject({
       command: "/home/tom/.local/bin/uv",
     });
@@ -169,27 +152,18 @@ describe("CalendarAgentHost", () => {
     await host.stop();
   });
 
-  it("does not fetch a Google token when no Google server is configured", async () => {
+  it("disableGoogle wires only the configured stdio servers", async () => {
     const fake = makeFakeQuery();
-    let fetched = false;
-    const tokenMgr = new GoogleTokenManager({
-      credentials: { client_id: "c", client_secret: "s", refresh_token: "r" },
-      fetchToken: async () => {
-        fetched = true;
-        return { access_token: "x", expires_in: 3600 };
-      },
-    });
     const host = new CalendarAgentHost({
       config: { mcpServers: { whatsapp: { command: "uv" } } },
       queryFn: fake.query,
       systemPrompt: STUB_PROMPT,
-      googleTokenManager: tokenMgr,
+      disableGoogle: true,
     });
     await host.start();
-    expect(fetched).toBe(false);
-    expect((fake.lastOptions()!.allowedTools as string[])).toEqual([
-      "mcp__whatsapp__*",
-    ]);
+    const opts = fake.lastOptions()!;
+    expect(Object.keys(opts.mcpServers as object)).toEqual(["whatsapp"]);
+    expect(opts.allowedTools as string[]).toEqual(["mcp__whatsapp__*"]);
     await host.stop();
   });
 
@@ -204,6 +178,7 @@ describe("CalendarAgentHost", () => {
       },
       queryFn: makeFakeQuery().query,
       systemPrompt: STUB_PROMPT,
+      disableGoogle: true,
     });
 
     const kept = host.filterInputs([
@@ -222,6 +197,7 @@ describe("CalendarAgentHost", () => {
       config: { mcpServers: {} },
       queryFn: makeFakeQuery().query,
       systemPrompt: STUB_PROMPT,
+      disableGoogle: true,
     });
     expect(
       host.filterInputs([{ source: "whatsapp", group: "Family", text: "x" }])
