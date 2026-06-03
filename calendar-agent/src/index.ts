@@ -1,5 +1,6 @@
 import { loadConfig } from "./config";
 import { CalendarAgentHost } from "./host";
+import { ApprovalBridge } from "./bridge";
 
 /**
  * Entrypoint: `node dist/index.js` (i.e. `node calendar-agent` from the
@@ -9,7 +10,13 @@ import { CalendarAgentHost } from "./host";
  */
 async function main(): Promise<void> {
   const config = loadConfig();
-  const host = new CalendarAgentHost({ config });
+
+  // Streaming input bridge (TASK-32): connect to the server's approval queue so
+  // escalations can block on a user's answer and resume the live session.
+  const bridge = new ApprovalBridge();
+  bridge.connect();
+
+  const host = new CalendarAgentHost({ config, bridge });
 
   const mcp = host.configuredMcpServers();
   console.log(
@@ -26,6 +33,7 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[calendar-agent] received ${signal}, shutting down…`);
+    bridge.close();
     await host.stop();
     process.exit(0);
   };

@@ -62,8 +62,11 @@ router.get("/approvals", (_req: Request, res: Response) => {
 
 /**
  * POST /api/approvals/:id/answer — user's text answer.
- * Stores the answer and marks the item answered. Handing the answer to the live
- * SDK session is TASK-32 (out of scope here).
+ * Stores the answer, marks the item answered, AND pushes an `approval_answer`
+ * event over WebSocket so the live Calendar Agent SDK session that registered
+ * this approval can pick the answer up and continue (TASK-32 streaming input
+ * bridge). The event is correlated via `id` (and the original run/session ids);
+ * the agent host filters incoming events down to the approval ids it owns.
  */
 router.post("/approvals/:id/answer", (req: Request, res: Response) => {
   const db = getDb();
@@ -92,6 +95,17 @@ router.post("/approvals/:id/answer", (req: Request, res: Response) => {
   const row = db
     .prepare("SELECT * FROM approvals WHERE id = ?")
     .get(id) as ApprovalRow;
+
+  // Deliver the answer to the waiting live SDK session (TASK-32). The agent
+  // host is connected as a WS client and matches on `id`.
+  broadcast({
+    event: "approval_answer",
+    id: row.id,
+    run_id: row.run_id,
+    session_id: row.session_id,
+    answer: row.answer,
+  });
+
   res.json(row);
 });
 

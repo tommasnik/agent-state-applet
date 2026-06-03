@@ -184,6 +184,25 @@ describe("AC#4 — POST /api/approvals/:id/answer", () => {
     expect(list.body.approvals).toHaveLength(0);
   });
 
+  it("pushes a correlated approval_answer event over WebSocket (TASK-32)", async () => {
+    const created = await request(app)
+      .post("/api/approvals")
+      .send({ run_id: 7, session_id: "sess-xyz", payload: { x: 1 } });
+    mockBroadcast.mockClear();
+
+    await request(app)
+      .post(`/api/approvals/${created.body.id}/answer`)
+      .send({ answer: "create it at 14:00" });
+
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    const arg = mockBroadcast.mock.calls[0][0];
+    expect(arg.event).toBe("approval_answer");
+    expect(arg.id).toBe(created.body.id);
+    expect(arg.run_id).toBe(7);
+    expect(arg.session_id).toBe("sess-xyz");
+    expect(arg.answer).toBe("create it at 14:00");
+  });
+
   it("rejects an empty answer", async () => {
     const created = await request(app)
       .post("/api/approvals")

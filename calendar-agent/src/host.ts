@@ -2,6 +2,12 @@ import { CalendarAgentConfig, McpServerConfig } from "./config";
 import { loadSystemPrompt } from "./prompt";
 import { MessageQueue, QueueUserMessage } from "./messageQueue";
 import { AgentInput, filterInputs, WhitelistConfig } from "./whitelist";
+import {
+  ApprovalBridge,
+  ApprovalRegistration,
+  ApprovalTimeoutError,
+  BridgeConnectionLostError,
+} from "./bridge";
 
 /**
  * Minimal structural type of the SDK's `query()` function. We do not import the
@@ -42,6 +48,15 @@ export interface CalendarAgentHostOptions {
   queryFn?: SdkQueryFn;
   /** Override the system prompt (defaults to loading prompt.md). */
   systemPrompt?: string;
+  /**
+   * The streaming-input bridge to the server's approval queue (TASK-32). When
+   * omitted, escalation falls back to local-only behavior (no remote answer
+   * delivery). Tests inject a bridge with stubbed transport.
+   */
+  bridge?: ApprovalBridge;
+  /** Optional correlation hints attached to registered approvals. */
+  runId?: number | null;
+  sessionId?: string | null;
 }
 
 /**
@@ -72,6 +87,9 @@ export class CalendarAgentHost {
   private readonly queue = new MessageQueue<QueueUserMessage>();
   private status: HostStatus = "idle";
   private runLoop: Promise<void> | null = null;
+  private readonly bridge?: ApprovalBridge;
+  private readonly runId?: number | null;
+  private readonly sessionId?: string | null;
 
   constructor(opts: CalendarAgentHostOptions) {
     // Be defensive: a config without an explicit whitelist gets the empty
@@ -85,6 +103,9 @@ export class CalendarAgentHost {
     };
     this.queryFn = opts.queryFn;
     this.systemPrompt = opts.systemPrompt ?? loadSystemPrompt();
+    this.bridge = opts.bridge;
+    this.runId = opts.runId;
+    this.sessionId = opts.sessionId;
   }
 
   getStatus(): HostStatus {
@@ -134,6 +155,58 @@ export class CalendarAgentHost {
    */
   markWaitingForApproval(): void {
     this.status = "waiting_for_approval";
+  }
+
+  /**
+   * Escalate an uncertain action and BLOCK on the user's answer (TASK-32).
+   *
+   * Mechanics:
+   *   1. Register the escalation with the server's approval queue via the
+   *      bridge (POST /api/approvals) → get an approval id.
+   *   2. Go to `waiting_for_approval`. The SDK session does NOT end — the
+   *      MessageQueue iterator is parked, keeping the session alive.
+   *   3. Await the answer delivered over WebSocket (correlated by id).
+   *   4. On answer: go back to `running` and {@link submit} the answer text as
+   *      a *continuation prompt*. The reasoning loop then proceeds to write the
+   *      event to the AI calendar (AC#3 — exercised in tests via a mocked tool
+   *      call; real Google Calendar write needs live OAuth from TASK-29).
+   *   5. On timeout / connection loss (AC#4): the loss is logged by the bridge;
+   *      the host returns to `running` and surfaces the failure to the caller
+   *      so the escalation can be abandoned without killing the session.
+   *
+   * Requires a bridge to have been provided; throws otherwise.
+   */
+  async escalate(reg: Omit<ApprovalRegistration, "runId" | "sessionId"> &
+    Partial<Pick<ApprovalRegistration, "runId" | "sessionId">>): Promise<string> {
+    if (!this.bridge) {
+      throw new Error("Cannot escalate: no approval bridge configured");
+    }
+    this.markWaitingForApproval();
+    try {
+      const answer = await this.bridge.registerAndWait({
+        runId: reg.runId ?? this.runId ?? null,
+        sessionId: reg.sessionId ?? this.sessionId ?? null,
+        payload: reg.payload,
+      });
+      // Answer arrived: resume the live session and feed it back in as a
+      // continuation prompt so the model can act on it (e.g. write the event).
+      this.status = "running";
+      this.submit(answer);
+      return answer;
+    } catch (err) {
+      // AC#4: defined behavior on loss. The bridge has already logged the
+      // specific cause; here we unblock the session rather than leave it stuck.
+      if (err instanceof ApprovalTimeoutError) {
+        this.status = "running";
+        throw err;
+      }
+      if (err instanceof BridgeConnectionLostError) {
+        this.status = "running";
+        throw err;
+      }
+      this.status = "running";
+      throw err;
+    }
   }
 
   /**
