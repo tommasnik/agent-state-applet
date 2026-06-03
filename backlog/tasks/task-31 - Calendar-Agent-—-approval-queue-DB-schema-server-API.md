@@ -1,10 +1,10 @@
 ---
 id: TASK-31
 title: 'Calendar Agent — approval queue: DB schema + server API'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 08:43'
-updated_date: '2026-06-03 10:14'
+updated_date: '2026-06-03 10:20'
 labels: []
 dependencies:
   - TASK-28

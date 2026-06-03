@@ -1,10 +1,10 @@
 ---
 id: TASK-33
 title: 'Calendar Agent — applet UI: approval queue obrazovka'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 08:43'
-updated_date: '2026-06-03 10:29'
+updated_date: '2026-06-03 10:36'
 labels: []
 dependencies:
   - TASK-31

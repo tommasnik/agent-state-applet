@@ -1,10 +1,10 @@
 ---
 id: TASK-28
 title: Calendar Agent — package scaffold + Agent SDK long-lived host
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 08:41'
-updated_date: '2026-06-03 09:30'
+updated_date: '2026-06-03 09:39'
 labels: []
 dependencies: []
 priority: high

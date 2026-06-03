@@ -1,10 +1,10 @@
 ---
 id: TASK-32
 title: Calendar Agent — streaming input bridge (server → živá SDK session)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 08:43'
-updated_date: '2026-06-03 10:20'
+updated_date: '2026-06-03 10:29'
 labels: []
 dependencies:
   - TASK-28
@@ -40,6 +40,8 @@ Novel infra: kanál, kterým se uživatelova odpověď z approval queue dostane 
   > Ověřeno na úrovni mechaniky (mock SDK/MCP): po doručení odpovědi host přejde zpět do `running`, vloží odpověď jako pokračovací prompt do MessageQueue a reasoning smyčka vydá tool_use volání pro zápis do kalendáře (`mcp__google-calendar__create_event`). End-to-end zápis do reálného Google kalendáře čeká na živý OAuth (TASK-29) — v testech se reálné API NEVOLÁ.
 - [x] #4 Chování při ztrátě session (restart/timeout) je definované a zalogované
 <!-- AC:END -->
+
+
 
 ## Implementation notes (TASK-32)
 

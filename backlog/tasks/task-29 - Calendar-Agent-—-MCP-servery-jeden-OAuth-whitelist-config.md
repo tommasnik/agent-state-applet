@@ -1,9 +1,10 @@
 ---
 id: TASK-29
 title: Calendar Agent — MCP servery + jeden OAuth + whitelist config
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-06-03 08:42'
+updated_date: '2026-06-03 10:10'
 labels: []
 dependencies:
   - TASK-28
@@ -42,8 +43,9 @@ Zprovoznit a nakonfigurovat 3 MCP servery, které host připojuje, a whitelist v
 - [x] #4 Zdokumentovaný postup re-autentizace WhatsApp (~20 dní)
 <!-- AC:END -->
 
-## Implementation notes
+## Implementation Notes
 
+<!-- SECTION:NOTES:BEGIN -->
 AC#1 a AC#2 vyžadují **živou interaktivní autentizaci** (naskenování WhatsApp QR
 telefonem, vytvoření Google Cloud projektu + OAuth consent v prohlížeči), kterou
 musí provést uživatel. Implementace + MCP wiring + přesný step-by-step návod jsou
@@ -63,3 +65,4 @@ Po dodání auth hodnot ze SETUP.md se AC#1/#2 uzavřou bez další implementace
 Ověřené balíčky: Gmail = `@gongrzhe/server-gmail-autoauth-mcp`
 (GongRzhe/Gmail-MCP-Server), Calendar = `@cocal/google-calendar-mcp`
 (nspady/google-calendar-mcp), WhatsApp = lharries/whatsapp-mcp.
+<!-- SECTION:NOTES:END -->

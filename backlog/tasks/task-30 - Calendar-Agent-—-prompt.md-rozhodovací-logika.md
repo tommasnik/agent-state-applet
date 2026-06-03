@@ -1,10 +1,10 @@
 ---
 id: TASK-30
 title: Calendar Agent — prompt.md (rozhodovací logika)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 08:42'
-updated_date: '2026-06-03 10:10'
+updated_date: '2026-06-03 10:14'
 labels: []
 dependencies:
   - TASK-28

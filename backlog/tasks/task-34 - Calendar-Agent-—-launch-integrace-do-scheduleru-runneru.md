@@ -1,10 +1,10 @@
 ---
 id: TASK-34
 title: Calendar Agent — launch integrace do scheduleru/runneru
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 08:44'
-updated_date: '2026-06-03 10:36'
+updated_date: '2026-06-03 10:46'
 labels: []
 dependencies:
   - TASK-28
