@@ -42,7 +42,8 @@ describe("cli usage", () => {
     const r = await capture(() => main(["node", "cli.js", "--help"]));
     expect(r.out).toContain("calendar");
     expect(r.out).toContain("gmail");
-    // wa / approvals are still stubs
+    expect(r.out).toContain("wa");
+    // approvals is still a stub
     expect(r.out).toContain("not implemented yet");
   });
 
@@ -53,7 +54,7 @@ describe("cli usage", () => {
   });
 
   it("remaining stub subcommand returns 1 and reports not implemented", async () => {
-    const r = await capture(() => main(["node", "cli.js", "wa"]));
+    const r = await capture(() => main(["node", "cli.js", "approvals"]));
     expect(r.code).toBe(1);
     expect(r.err).toContain("not implemented yet");
   });

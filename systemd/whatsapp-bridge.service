@@ -1,0 +1,20 @@
+[Unit]
+Description=WhatsApp Go bridge for calendar-agent-cli (cal-agent wa)
+Documentation=https://github.com/lharries/whatsapp-mcp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/work/external/whatsapp-mcp/whatsapp-bridge
+# Runs the Go bridge that holds the WhatsApp connection and writes incoming
+# messages to store/messages.db in real time. cal-agent wa reads that DB and
+# treats "bridge listening on :8080" as the liveness signal.
+#   - If you have a compiled binary, point ExecStart at it instead, e.g.:
+#       ExecStart=%h/work/external/whatsapp-mcp/whatsapp-bridge/whatsapp-bridge
+ExecStart=/usr/bin/env go run main.go
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

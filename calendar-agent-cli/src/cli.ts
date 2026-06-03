@@ -9,7 +9,7 @@
  */
 
 import { loadConfig, configPath } from "./config";
-import { runCalendar, runGmail } from "./commands";
+import { runCalendar, runGmail, runWhatsApp } from "./commands";
 
 const PROG = "cal-agent";
 
@@ -105,11 +105,20 @@ const gmailCommand: Command = {
   },
 };
 
+const whatsappCommand: Command = {
+  name: "wa",
+  summary: "WhatsApp (read-only): list whitelisted groups / messages",
+  implemented: true,
+  run(args): Promise<number> {
+    return runWhatsApp(args);
+  },
+};
+
 const COMMAND_LIST: Command[] = [
   configCommand,
   calendarCommand,
   gmailCommand,
-  stub("wa"),
+  whatsappCommand,
   stub("approvals"),
 ];
 

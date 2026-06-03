@@ -7,13 +7,25 @@
  * network.
  */
 
-import { loadConfig } from "./config";
+import { loadConfig, WhitelistConfig } from "./config";
 import {
   GoogleClient,
   GoogleClientError,
   buildGmailQuery,
   parseEventDateTime,
 } from "./google";
+import {
+  BridgeDb,
+  LivenessProbe,
+  WhatsAppDeps,
+  WhatsAppError,
+  defaultBridgeDbPath,
+  ensureBridgeLive,
+  listWhitelistedChats,
+  messagesForGroup,
+  openBridgeDb,
+  tcpLivenessProbe,
+} from "./whatsapp";
 import { parseFlags } from "./args";
 
 const PROG = "cal-agent";
@@ -205,5 +217,114 @@ export async function runGmail(
   } catch (e) {
     if (e instanceof GoogleClientError) return err(stderr, e.message);
     return err(stderr, String(e));
+  }
+}
+
+// ---- WhatsApp (read bridge SQLite, whitelist, liveness) ------------------
+
+const WA_USAGE = `${PROG} wa <subcommand>
+  list-chats                 List ONLY whitelisted WhatsApp groups
+  messages <group name>      Messages from a whitelisted group
+                             [--since <iso>] [--limit <n>]
+  Global: [--db <path>] [--max-age-hours <n>]`;
+
+/** Default max staleness (hours) before a non-fatal warning is emitted. */
+const DEFAULT_MAX_AGE_HOURS = 24;
+
+/** Dependencies for {@link runWhatsApp} — injectable for tests. */
+export interface WhatsAppCommandDeps {
+  /** Open a {@link BridgeDb} for a path (defaults to read-only better-sqlite3). */
+  openDb?: (dbPath: string) => BridgeDb;
+  /** Liveness probe (defaults to a TCP connect to :8080). */
+  liveness?: LivenessProbe;
+  /** Whitelist (defaults to the shared config's whitelist). */
+  whitelist?: WhitelistConfig;
+  stdout?: (s: string) => void;
+  stderr?: (s: string) => void;
+}
+
+function resolveWaDeps(deps: WhatsAppCommandDeps): {
+  openDb: (dbPath: string) => BridgeDb;
+  liveness: LivenessProbe;
+  whitelist: WhitelistConfig;
+  stdout: (s: string) => void;
+  stderr: (s: string) => void;
+} {
+  return {
+    openDb: deps.openDb ?? openBridgeDb,
+    liveness: deps.liveness ?? tcpLivenessProbe,
+    whitelist: deps.whitelist ?? loadConfig().whitelist,
+    stdout: deps.stdout ?? ((s) => void process.stdout.write(s)),
+    stderr: deps.stderr ?? ((s) => void process.stderr.write(s)),
+  };
+}
+
+export async function runWhatsApp(
+  args: string[],
+  deps: WhatsAppCommandDeps = {}
+): Promise<number> {
+  const { openDb, liveness, whitelist, stdout, stderr } = resolveWaDeps(deps);
+  const sub = args[0];
+  if (!sub || sub === "-h" || sub === "--help") {
+    (sub ? stdout : stderr)(WA_USAGE + "\n");
+    return sub ? 0 : 2;
+  }
+  const { flags, positionals } = parseFlags(args.slice(1));
+
+  const dbPath = require_(flags, "db") ?? defaultBridgeDbPath();
+  const maxAgeRaw = require_(flags, "max-age-hours");
+  const maxAgeHours =
+    maxAgeRaw !== undefined ? Number(maxAgeRaw) : DEFAULT_MAX_AGE_HOURS;
+  if (Number.isNaN(maxAgeHours) || maxAgeHours < 0) {
+    return err(stderr, "wa: --max-age-hours must be a non-negative number");
+  }
+
+  let db: BridgeDb;
+  try {
+    db = openDb(dbPath);
+  } catch (e) {
+    if (e instanceof WhatsAppError) return err(stderr, e.message);
+    return err(stderr, String(e));
+  }
+
+  const waDeps: WhatsAppDeps = { db, whitelist, liveness };
+
+  try {
+    // Liveness guard runs before any read: bridge down → hard error, never
+    // silently serve stale data. Staleness → non-fatal warning on stderr.
+    const { staleWarning } = await ensureBridgeLive(waDeps, maxAgeHours);
+    if (staleWarning) stderr(staleWarning + "\n");
+
+    switch (sub) {
+      case "list-chats":
+        return emit(stdout, listWhitelistedChats(waDeps));
+
+      case "messages": {
+        const groupName = positionals[0];
+        if (!groupName) {
+          return err(stderr, "messages: <group name> is required");
+        }
+        const limitRaw = require_(flags, "limit");
+        const limit = limitRaw !== undefined ? Number(limitRaw) : undefined;
+        if (limit !== undefined && (Number.isNaN(limit) || limit < 0)) {
+          return err(stderr, "messages: --limit must be a non-negative number");
+        }
+        const result = messagesForGroup(waDeps, {
+          groupName,
+          sinceIso: require_(flags, "since"),
+          limit,
+        });
+        return emit(stdout, result);
+      }
+
+      default:
+        stderr(`${PROG}: unknown wa subcommand '${sub}'\n\n${WA_USAGE}\n`);
+        return 2;
+    }
+  } catch (e) {
+    if (e instanceof WhatsAppError) return err(stderr, e.message);
+    return err(stderr, String(e));
+  } finally {
+    db.close();
   }
 }
