@@ -103,6 +103,41 @@ describe("CalendarAgentHost", () => {
     expect(host.getStatus()).toBe("stopped");
     expect(host.isSessionAlive()).toBe(false);
   });
+
+  it("AC#3: filterInputs gates inputs through the configured whitelist", () => {
+    const host = new CalendarAgentHost({
+      config: {
+        mcpServers: {},
+        whitelist: {
+          whatsapp: { groups: ["Family"] },
+          gmail: { senders: ["@daktela.com"], labels: [] },
+        },
+      },
+      queryFn: makeFakeQuery().query,
+      systemPrompt: STUB_PROMPT,
+    });
+
+    const kept = host.filterInputs([
+      { source: "whatsapp", group: "Family", text: "keep" },
+      { source: "whatsapp", group: "Random", text: "drop" },
+      { source: "gmail", from: "x@daktela.com", subject: "keep" },
+      { source: "gmail", from: "spam@evil.com", subject: "drop" },
+    ]);
+
+    expect(kept).toHaveLength(2);
+    expect(host.whitelist().whatsapp.groups).toEqual(["Family"]);
+  });
+
+  it("defaults to a deny-all whitelist when config omits one", () => {
+    const host = new CalendarAgentHost({
+      config: { mcpServers: {} },
+      queryFn: makeFakeQuery().query,
+      systemPrompt: STUB_PROMPT,
+    });
+    expect(
+      host.filterInputs([{ source: "whatsapp", group: "Family", text: "x" }])
+    ).toEqual([]);
+  });
 });
 
 /** Let the host's background drain loop process queued messages. */

@@ -1,6 +1,15 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { WhitelistConfig, buildWhitelist, EMPTY_WHITELIST } from "./whitelist";
+
+export type { WhitelistConfig } from "./whitelist";
+export {
+  buildWhitelist,
+  filterInputs,
+  isAllowed,
+  EMPTY_WHITELIST,
+} from "./whitelist";
 
 /**
  * MCP server configuration shapes accepted by the Claude Agent SDK.
@@ -43,6 +52,12 @@ export interface CalendarAgentConfig {
   mcpServers: Record<string, McpServerConfig>;
   /** Model to drive the host with. */
   model?: string;
+  /**
+   * Input whitelist (TASK-29 AC#3): which WhatsApp groups / Gmail senders /
+   * labels the agent is allowed to read. Inputs are filtered against this
+   * BEFORE the agent reasons over them (see whitelist.ts / filterInputs).
+   */
+  whitelist: WhitelistConfig;
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "agent-manager");
@@ -56,6 +71,7 @@ const CONFIG_PATH = path.join(CONFIG_DIR, "calendar-agent.json");
 const DEFAULT_CONFIG: CalendarAgentConfig = {
   mcpServers: {},
   model: undefined,
+  whitelist: EMPTY_WHITELIST,
 };
 
 function isValidMcpServer(v: unknown): v is McpServerConfig {
@@ -105,6 +121,7 @@ export function loadConfig(): CalendarAgentConfig {
     return {
       mcpServers: buildMcpServers(parsed.mcpServers),
       model: typeof parsed.model === "string" ? parsed.model : undefined,
+      whitelist: buildWhitelist(parsed.whitelist),
     };
   } catch {
     return { ...DEFAULT_CONFIG };

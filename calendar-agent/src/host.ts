@@ -1,6 +1,7 @@
 import { CalendarAgentConfig, McpServerConfig } from "./config";
 import { loadSystemPrompt } from "./prompt";
 import { MessageQueue, QueueUserMessage } from "./messageQueue";
+import { AgentInput, filterInputs, WhitelistConfig } from "./whitelist";
 
 /**
  * Minimal structural type of the SDK's `query()` function. We do not import the
@@ -31,7 +32,12 @@ export type HostStatus =
   | "stopped";
 
 export interface CalendarAgentHostOptions {
-  config: CalendarAgentConfig;
+  /**
+   * The agent config. `whitelist` may be omitted by callers (it defaults to
+   * deny-all); everything {@link loadConfig} produces includes it.
+   */
+  config: Omit<CalendarAgentConfig, "whitelist"> &
+    Partial<Pick<CalendarAgentConfig, "whitelist">>;
   /** Override the SDK query fn (used by tests to avoid real API calls). */
   queryFn?: SdkQueryFn;
   /** Override the system prompt (defaults to loading prompt.md). */
@@ -68,7 +74,15 @@ export class CalendarAgentHost {
   private runLoop: Promise<void> | null = null;
 
   constructor(opts: CalendarAgentHostOptions) {
-    this.config = opts.config;
+    // Be defensive: a config without an explicit whitelist gets the empty
+    // (deny-all) default rather than crashing the filter path.
+    this.config = {
+      ...opts.config,
+      whitelist: opts.config.whitelist ?? {
+        whatsapp: { groups: [] },
+        gmail: { senders: [], labels: [] },
+      },
+    };
     this.queryFn = opts.queryFn;
     this.systemPrompt = opts.systemPrompt ?? loadSystemPrompt();
   }
@@ -85,6 +99,21 @@ export class CalendarAgentHost {
   /** Names of MCP servers that were configured for this host. */
   configuredMcpServers(): string[] {
     return Object.keys(this.config.mcpServers);
+  }
+
+  /** The active input whitelist (TASK-29 AC#3). */
+  whitelist(): WhitelistConfig {
+    return this.config.whitelist;
+  }
+
+  /**
+   * Gate raw MCP inputs through the whitelist BEFORE they reach the model.
+   * Only whitelisted WhatsApp groups / Gmail senders / labels survive — this
+   * is the token-saving, noise-reducing filter required by AC#3. Callers feed
+   * the survivors into {@link submit}.
+   */
+  filterInputs(inputs: AgentInput[]): AgentInput[] {
+    return filterInputs(inputs, this.config.whitelist);
   }
 
   /**
