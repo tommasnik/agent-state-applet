@@ -19,7 +19,47 @@ cal-agent config                 Show the resolved shared config
 cal-agent calendar <sub> ...     Google Calendar (read + AI-calendar-only writes)
 cal-agent gmail <sub> ...        Gmail (read-only)
 cal-agent wa <sub> ...           WhatsApp (read-only, whitelisted groups)
+cal-agent approvals <sub> ...    Escalation queue (add / list / answered)
 ```
+
+## Approvals & the one-shot escalation model (`cal-agent approvals`)
+
+A run is **one-shot** (`claude -p`) — there is no long-lived session and no
+blocking wait for a human. Escalation works asynchronously through the applet
+server's approvals queue (the same API used by the SDK solution):
+
+1. **During a run**, when the agent is uncertain about an action (e.g. an
+   ambiguous reschedule), it does **not** act and does **not** wait. It registers
+   the proposed action as a *pending* item with `approvals add`, then finishes
+   the run normally.
+2. **A human answers** the item later — in the applet UI, or via the server's
+   `POST /api/approvals/:id/answer` endpoint. The item becomes *answered*.
+3. **The next run starts** by reading the answered items with
+   `approvals answered` and applying them, then proceeds with its normal work.
+
+No run ever blocks on a human: uncertainty flows out via `add`, decisions flow
+back in on the following run via `answered`.
+
+```
+cal-agent approvals add --payload '<json>'    Register a pending item, prints id
+cal-agent approvals add --summary "<text>" [--reason "<r>"] [--source <s>]...
+cal-agent approvals list                      List pending approvals
+cal-agent approvals answered                   List answered approvals (apply next run)
+Global flags:
+    [--base-url <url>]   Applet server (default $AGENT_MANAGER_URL or
+                         http://127.0.0.1:7855)
+    [--run-id <n>] [--session-id <id>]   Correlate the item with a run/session
+```
+
+`add` takes either a ready `--payload <json>` (the proposed action + uncertainty
++ sources) or assembles one from `--summary` / `--reason` / repeated `--source`.
+Output is JSON on stdout; errors (including non-2xx HTTP) go to stderr with a
+non-zero exit, so a scheduled run fails loudly rather than silently dropping an
+escalation.
+
+The server's `GET /api/approvals` defaults to *pending* (backward compatible)
+and accepts `?status=pending|answered|dismissed|all`; `answered` is what the CLI
+uses at the start of a run.
 
 ## WhatsApp (`cal-agent wa`)
 

@@ -38,13 +38,12 @@ describe("cli usage", () => {
     expect(r.out).toContain("Usage: cal-agent");
   });
 
-  it("lists implemented + stub commands", async () => {
+  it("lists all implemented commands", async () => {
     const r = await capture(() => main(["node", "cli.js", "--help"]));
     expect(r.out).toContain("calendar");
     expect(r.out).toContain("gmail");
     expect(r.out).toContain("wa");
-    // approvals is still a stub
-    expect(r.out).toContain("not implemented yet");
+    expect(r.out).toContain("approvals");
   });
 
   it("exits 2 on unknown command", async () => {
@@ -53,10 +52,10 @@ describe("cli usage", () => {
     expect(r.err).toContain("unknown command");
   });
 
-  it("remaining stub subcommand returns 1 and reports not implemented", async () => {
+  it("approvals with no subcommand prints usage (exit 2)", async () => {
     const r = await capture(() => main(["node", "cli.js", "approvals"]));
-    expect(r.code).toBe(1);
-    expect(r.err).toContain("not implemented yet");
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("add");
   });
 
   it("calendar with no subcommand prints usage (exit 2)", async () => {

@@ -51,12 +51,40 @@ router.post("/approvals", (req: Request, res: Response) => {
   res.status(201).json(row);
 });
 
-/** GET /api/approvals — list pending approvals (for UI). */
-router.get("/approvals", (_req: Request, res: Response) => {
+/**
+ * GET /api/approvals — list approvals.
+ *
+ * `?status=pending|answered|dismissed|all` selects which rows to return.
+ * Backward compatible: with no `status` (or an unknown value) it returns only
+ * pending items, exactly as before — the UI relies on this default. The
+ * `answered` / `all` filters back the one-shot Calendar Agent escalation model
+ * (a fresh run reads answered items via `cal-agent approvals answered`).
+ */
+router.get("/approvals", (req: Request, res: Response) => {
   const db = getDb();
-  const rows = db
-    .prepare("SELECT * FROM approvals WHERE status = 'pending' ORDER BY id ASC")
-    .all() as ApprovalRow[];
+  const statusRaw = req.query["status"];
+  const status = typeof statusRaw === "string" ? statusRaw : "pending";
+
+  let rows: ApprovalRow[];
+  if (status === "all") {
+    rows = db
+      .prepare("SELECT * FROM approvals ORDER BY id ASC")
+      .all() as ApprovalRow[];
+  } else if (
+    status === "answered" ||
+    status === "dismissed" ||
+    status === "pending"
+  ) {
+    rows = db
+      .prepare("SELECT * FROM approvals WHERE status = ? ORDER BY id ASC")
+      .all(status) as ApprovalRow[];
+  } else {
+    // Unknown value → preserve the historical default (pending only).
+    rows = db
+      .prepare("SELECT * FROM approvals WHERE status = 'pending' ORDER BY id ASC")
+      .all() as ApprovalRow[];
+  }
+
   res.json({ approvals: rows });
 });
 

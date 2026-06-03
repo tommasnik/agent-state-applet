@@ -10,6 +10,7 @@
 
 import { loadConfig, configPath } from "./config";
 import { runCalendar, runGmail, runWhatsApp } from "./commands";
+import { runApprovals } from "./approvals";
 
 const PROG = "cal-agent";
 
@@ -50,20 +51,6 @@ function version(): string {
   } catch {
     return "0.0.0";
   }
-}
-
-function stub(name: string): Command {
-  return {
-    name,
-    summary: `${name} operations`,
-    implemented: false,
-    run(): number {
-      process.stderr.write(
-        `${PROG}: '${name}' is not implemented yet.\n`
-      );
-      return 1;
-    },
-  };
 }
 
 const configCommand: Command = {
@@ -114,12 +101,21 @@ const whatsappCommand: Command = {
   },
 };
 
+const approvalsCommand: Command = {
+  name: "approvals",
+  summary: "Escalation queue: add / list / answered (one-shot model)",
+  implemented: true,
+  run(args): Promise<number> {
+    return runApprovals(args);
+  },
+};
+
 const COMMAND_LIST: Command[] = [
   configCommand,
   calendarCommand,
   gmailCommand,
   whatsappCommand,
-  stub("approvals"),
+  approvalsCommand,
 ];
 
 const COMMANDS: Record<string, Command> = Object.fromEntries(

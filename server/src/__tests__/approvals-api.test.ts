@@ -153,6 +153,59 @@ describe("AC#3 — GET /api/approvals + WebSocket push", () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/approvals?status= filter (one-shot escalation model)
+// ---------------------------------------------------------------------------
+describe("GET /api/approvals?status=", () => {
+  let db: Database.Database;
+  let app: express.Application;
+  beforeEach(() => {
+    db = setupDb();
+    app = setupApp();
+    mockBroadcast.mockClear();
+  });
+  afterEach(() => db.close());
+
+  async function seed(): Promise<{ pendingId: number; answeredId: number; dismissedId: number }> {
+    const a = await request(app).post("/api/approvals").send({ payload: { a: 1 } });
+    const b = await request(app).post("/api/approvals").send({ payload: { b: 2 } });
+    const c = await request(app).post("/api/approvals").send({ payload: { c: 3 } });
+    await request(app).post(`/api/approvals/${b.body.id}/answer`).send({ answer: "ok" });
+    await request(app).post(`/api/approvals/${c.body.id}/dismiss`).send();
+    return { pendingId: a.body.id, answeredId: b.body.id, dismissedId: c.body.id };
+  }
+
+  it("defaults to pending when no status is given", async () => {
+    const { pendingId } = await seed();
+    const res = await request(app).get("/api/approvals");
+    expect(res.status).toBe(200);
+    expect(res.body.approvals).toHaveLength(1);
+    expect(res.body.approvals[0].id).toBe(pendingId);
+  });
+
+  it("returns answered items with ?status=answered", async () => {
+    const { answeredId } = await seed();
+    const res = await request(app).get("/api/approvals?status=answered");
+    expect(res.body.approvals).toHaveLength(1);
+    expect(res.body.approvals[0].id).toBe(answeredId);
+    expect(res.body.approvals[0].status).toBe("answered");
+    expect(res.body.approvals[0].answer).toBe("ok");
+  });
+
+  it("returns every row with ?status=all", async () => {
+    await seed();
+    const res = await request(app).get("/api/approvals?status=all");
+    expect(res.body.approvals).toHaveLength(3);
+  });
+
+  it("falls back to pending for an unknown status value", async () => {
+    const { pendingId } = await seed();
+    const res = await request(app).get("/api/approvals?status=bogus");
+    expect(res.body.approvals).toHaveLength(1);
+    expect(res.body.approvals[0].id).toBe(pendingId);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC #4 — answer stores answer and marks answered
 // ---------------------------------------------------------------------------
 describe("AC#4 — POST /api/approvals/:id/answer", () => {
