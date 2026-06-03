@@ -55,6 +55,15 @@ export interface CalendarAgentConfig {
   /** Model to drive the host with. */
   model?: string;
   /**
+   * ID of the dedicated AI calendar (e.g.
+   * `…@group.calendar.google.com`). This is the ONLY calendar the agent is
+   * allowed to write to. The write tools (`create_event` / `update_event` /
+   * `delete_event`) HARD-ENFORCE this: a write to any other calendarId is
+   * refused, and when this is unset writes are refused entirely (safe default).
+   * Determined deterministically here — never guessed by the model from a name.
+   */
+  aiCalendarId?: string;
+  /**
    * Input whitelist (TASK-29 AC#3): which WhatsApp groups / Gmail senders /
    * labels the agent is allowed to read. Inputs are filtered against this
    * BEFORE the agent reasons over them (see whitelist.ts / filterInputs).
@@ -73,6 +82,7 @@ const CONFIG_PATH = path.join(CONFIG_DIR, "calendar-agent.json");
 const DEFAULT_CONFIG: CalendarAgentConfig = {
   mcpServers: {},
   model: undefined,
+  aiCalendarId: undefined,
   whitelist: EMPTY_WHITELIST,
 };
 
@@ -123,6 +133,8 @@ export function loadConfig(): CalendarAgentConfig {
     return {
       mcpServers: buildMcpServers(parsed.mcpServers),
       model: typeof parsed.model === "string" ? parsed.model : undefined,
+      aiCalendarId:
+        typeof parsed.aiCalendarId === "string" ? parsed.aiCalendarId : undefined,
       whitelist: buildWhitelist(parsed.whitelist),
     };
   } catch {

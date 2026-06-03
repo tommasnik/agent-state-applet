@@ -3,6 +3,9 @@
 
   "model": "claude-sonnet-4-5",
 
+  "_comment_aiCalendarId": "ID of the dedicated AI calendar — the ONLY calendar the agent may write to. The write tools (create_event/update_event/delete_event) HARD-ENFORCE this: a write to any other calendarId is refused, and if this key is unset the agent refuses ALL writes (safe default — it only reads + escalates). Do NOT rely on the calendar's name; the model must use this exact ID. Find it via the `list_calendars` tool, or in Google Calendar: Settings → (select the AI calendar) → Integrate calendar → Calendar ID. It usually ends with @group.calendar.google.com.",
+  "aiCalendarId": "<YOUR_AI_CALENDAR_ID>@group.calendar.google.com",
+
   "_comment_calendar_gmail": "Calendar + Gmail are NOT configured here. They are exposed as IN-PROCESS SDK MCP tools (servers `calendar` + `gmail`) built by the host over the raw Google REST APIs (calendar/v3, gmail/v1). We do NOT use the official Google remote MCP servers — they are gated behind the Google Workspace Developer Preview and reject personal @gmail accounts. The only thing you provide is OAuth credentials at ~/.config/agent-manager/google-oauth.json (client_id, client_secret, refresh_token); the host's token manager exchanges them for short-lived access tokens at runtime. See docs/SETUP.md, Part 2.",
 
   "_comment_mcpServers": "Only the local WhatsApp stdio server is configured here. It is the lharries/whatsapp-mcp Python server, launched via uv. The Go bridge (whatsapp-bridge/main.go) runs SEPARATELY and must be running + QR-authenticated first. Paths below are the real verified ones for this machine.",

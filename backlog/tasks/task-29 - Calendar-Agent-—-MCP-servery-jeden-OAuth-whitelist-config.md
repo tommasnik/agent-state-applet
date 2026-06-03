@@ -1,10 +1,10 @@
 ---
 id: TASK-29
 title: Calendar Agent — MCP servery + jeden OAuth + whitelist config
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 08:42'
-updated_date: '2026-06-03 12:01'
+updated_date: '2026-06-03 12:23'
 labels: []
 dependencies:
   - TASK-28

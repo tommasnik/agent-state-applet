@@ -72,6 +72,15 @@ export interface BuildGoogleToolsOptions {
   tokenManager?: GoogleTokenManager;
   /** HTTP transport; defaults to global `fetch`. */
   fetchImpl?: FetchImpl;
+  /**
+   * ID of the dedicated AI calendar. HARD ENFORCEMENT (TASK-29): the write
+   * tools (`create_event` / `update_event` / `delete_event`) accept writes
+   * ONLY to this calendarId. Any other `calendarId` is refused with an error
+   * result (no fetch is performed). When this is undefined, ALL writes are
+   * refused — a safe default so the agent never writes blind. Read tools are
+   * unaffected (the agent must read every calendar to detect conflicts).
+   */
+  aiCalendarId?: string;
 }
 
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
@@ -173,9 +182,42 @@ export async function buildGoogleMcpServers(
   const { tool, createSdkMcpServer } = await loadSdkCustomTools();
   const tokenManager = opts.tokenManager ?? new GoogleTokenManager();
   const fetchImpl = opts.fetchImpl ?? fetch;
+  const aiCalendarId = opts.aiCalendarId;
 
   const req = (url: string, init?: { method: string; body?: unknown }) =>
     googleRequest(tokenManager, fetchImpl, url, init);
+
+  /**
+   * HARD ENFORCEMENT of the dedicated AI calendar (TASK-29). Resolve the
+   * calendarId a write tool may use:
+   *   - no AI calendar configured  → refuse ALL writes (safe default);
+   *   - incoming calendarId omitted → default to the AI calendar;
+   *   - incoming calendarId differs → refuse (writing elsewhere is impossible).
+   * Returns either the allowed calendarId or an error result to return as-is.
+   */
+  function enforceAiCalendar(
+    raw: unknown
+  ): { ok: true; calendarId: string } | { ok: false; error: ToolResult } {
+    if (!aiCalendarId) {
+      return {
+        ok: false,
+        error: fail(
+          "Refused: no AI calendar configured (aiCalendarId is unset); refusing to write."
+        ),
+      };
+    }
+    const incoming =
+      typeof raw === "string" && raw.length > 0 ? raw : undefined;
+    if (incoming !== undefined && incoming !== aiCalendarId) {
+      return {
+        ok: false,
+        error: fail(
+          `Refused: writes are only allowed to the dedicated AI calendar (${aiCalendarId}). Got calendarId=${incoming}.`
+        ),
+      };
+    }
+    return { ok: true, calendarId: aiCalendarId };
+  }
 
   // ---- Calendar tools ----------------------------------------------------
 
@@ -243,11 +285,14 @@ export async function buildGoogleMcpServers(
 
   const createEvent = tool(
     "create_event",
-    "Create a new event on the given calendar. calendarId is REQUIRED (get it from list_calendars — the agent only writes to the dedicated AI calendar).",
+    "Create a new event on the dedicated AI calendar. Writes to any other calendar are refused by the tool — use exactly the configured AI calendar id (or omit calendarId to default to it).",
     {
       calendarId: z
         .string()
-        .describe("Target calendar id (required; use the AI calendar's id)"),
+        .optional()
+        .describe(
+          "Target calendar id; MUST be the configured AI calendar id. May be omitted (defaults to the AI calendar). Any other id is refused."
+        ),
       summary: z.string().describe("Event title"),
       description: z.string().optional().describe("Event description"),
       start: z
@@ -258,7 +303,9 @@ export async function buildGoogleMcpServers(
         .describe("End, same shape as start"),
     },
     async (args) => {
-      const calendarId = encodeURIComponent(String(args.calendarId));
+      const enforced = enforceAiCalendar(args.calendarId);
+      if (!enforced.ok) return enforced.error;
+      const calendarId = encodeURIComponent(enforced.calendarId);
       const body: Record<string, unknown> = {
         summary: args.summary,
         start: args.start,
@@ -275,9 +322,14 @@ export async function buildGoogleMcpServers(
 
   const updateEvent = tool(
     "update_event",
-    "Partially update an existing event (PATCH). calendarId + eventId REQUIRED.",
+    "Partially update an existing event (PATCH) on the dedicated AI calendar. eventId REQUIRED. Writes to any other calendar are refused — use the configured AI calendar id (or omit calendarId to default to it).",
     {
-      calendarId: z.string().describe("Target calendar id (required)"),
+      calendarId: z
+        .string()
+        .optional()
+        .describe(
+          "Target calendar id; MUST be the configured AI calendar id. May be omitted (defaults to the AI calendar). Any other id is refused."
+        ),
       eventId: z.string().describe("Event id to update (required)"),
       summary: z.string().optional().describe("New title"),
       description: z.string().optional().describe("New description"),
@@ -285,7 +337,9 @@ export async function buildGoogleMcpServers(
       end: z.record(z.string(), z.string()).optional().describe("New end"),
     },
     async (args) => {
-      const calendarId = encodeURIComponent(String(args.calendarId));
+      const enforced = enforceAiCalendar(args.calendarId);
+      if (!enforced.ok) return enforced.error;
+      const calendarId = encodeURIComponent(enforced.calendarId);
       const eventId = encodeURIComponent(String(args.eventId));
       const body: Record<string, unknown> = {};
       if (typeof args.summary === "string") body.summary = args.summary;
@@ -302,13 +356,20 @@ export async function buildGoogleMcpServers(
 
   const deleteEvent = tool(
     "delete_event",
-    "Delete an event. calendarId + eventId REQUIRED.",
+    "Delete an event on the dedicated AI calendar. eventId REQUIRED. Deletes on any other calendar are refused — use the configured AI calendar id (or omit calendarId to default to it).",
     {
-      calendarId: z.string().describe("Target calendar id (required)"),
+      calendarId: z
+        .string()
+        .optional()
+        .describe(
+          "Target calendar id; MUST be the configured AI calendar id. May be omitted (defaults to the AI calendar). Any other id is refused."
+        ),
       eventId: z.string().describe("Event id to delete (required)"),
     },
     async (args) => {
-      const calendarId = encodeURIComponent(String(args.calendarId));
+      const enforced = enforceAiCalendar(args.calendarId);
+      if (!enforced.ok) return enforced.error;
+      const calendarId = encodeURIComponent(enforced.calendarId);
       const eventId = encodeURIComponent(String(args.eventId));
       const r = await req(
         `${CALENDAR_BASE}/calendars/${calendarId}/events/${eventId}`,

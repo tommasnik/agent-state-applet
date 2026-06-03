@@ -83,6 +83,39 @@ export interface CalendarAgentHostOptions {
 }
 
 /**
+ * Append a runtime configuration block to the loaded system prompt that pins
+ * the dedicated AI calendar id (TASK-29). The prompt.md text owns the policy
+ * ("write only to the AI calendar, never guess by name"); this injects the
+ * concrete id at runtime so the model uses exactly the configured calendar.
+ *
+ * When no AI calendar is configured, the agent is told NOT to write at all and
+ * to escalate instead — matching the tools, which refuse every write when
+ * `aiCalendarId` is unset.
+ */
+export function withAiCalendarRuntime(
+  prompt: string,
+  aiCalendarId?: string
+): string {
+  if (aiCalendarId && aiCalendarId.length > 0) {
+    return (
+      prompt +
+      `\n\n## Runtime configuration\n` +
+      `The dedicated AI calendar ID is: ${aiCalendarId}. You MUST use exactly ` +
+      `this calendarId for every create_event / update_event / delete_event ` +
+      `call. Never write to any other calendar. Read other calendars only to ` +
+      `detect conflicts. (Writes to any other calendar are rejected by the tools.)`
+    );
+  }
+  return (
+    prompt +
+    `\n\n## Runtime configuration\n` +
+    `No AI calendar is configured (aiCalendarId is unset). You MUST NOT write ` +
+    `to any calendar — every write tool will refuse. Read calendars for ` +
+    `context only, and escalate anything that would otherwise need a write.`
+  );
+}
+
+/**
  * Lazily import the ESM-only Agent SDK from a CommonJS module. Using dynamic
  * import keeps the rest of the package as plain CommonJS (project convention)
  * while still being able to load the ESM SDK.
@@ -135,7 +168,9 @@ export class CalendarAgentHost {
       },
     };
     this.queryFn = opts.queryFn;
-    this.systemPrompt = opts.systemPrompt ?? loadSystemPrompt();
+    this.systemPrompt =
+      opts.systemPrompt ??
+      withAiCalendarRuntime(loadSystemPrompt(), this.config.aiCalendarId);
     this.bridge = opts.bridge;
     this.runId = opts.runId;
     this.sessionId = opts.sessionId;
@@ -146,6 +181,15 @@ export class CalendarAgentHost {
 
   getStatus(): HostStatus {
     return this.status;
+  }
+
+  /**
+   * The effective system prompt handed to the SDK — prompt.md plus the runtime
+   * AI-calendar block (see {@link withAiCalendarRuntime}). Exposed so tests can
+   * verify the configured AI calendar id is injected.
+   */
+  effectiveSystemPrompt(): string {
+    return this.systemPrompt;
   }
 
   /** Whether the underlying SDK session is still alive (not stopped). */
@@ -332,6 +376,10 @@ export class CalendarAgentHost {
       }
       this.googleMcpServers = await buildGoogleMcpServers({
         tokenManager: this.googleTokenManager,
+        // HARD ENFORCE (TASK-29): pass the configured AI calendar id so write
+        // tools refuse writes to any other calendar (and refuse all writes
+        // when unset).
+        aiCalendarId: this.config.aiCalendarId,
       });
     }
     // SDK MCP server instances are structurally compatible with the SDK's

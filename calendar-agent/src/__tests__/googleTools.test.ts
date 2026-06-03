@@ -169,7 +169,11 @@ describe("googleTools / in-process Google MCP servers", () => {
 
   it("create_event: POSTs the JSON body to the right calendar", async () => {
     const { fetchImpl, calls } = makeFetch({ body: { id: "evt1" } });
-    await buildGoogleMcpServers({ tokenManager: stubTokenManager(), fetchImpl });
+    await buildGoogleMcpServers({
+      tokenManager: stubTokenManager(),
+      fetchImpl,
+      aiCalendarId: "aiCalId",
+    });
 
     const res = await tool("calendar", "create_event").handler({
       calendarId: "aiCalId",
@@ -195,7 +199,11 @@ describe("googleTools / in-process Google MCP servers", () => {
 
   it("update_event: PATCHes only the provided fields", async () => {
     const { fetchImpl, calls } = makeFetch({ body: { id: "evt1" } });
-    await buildGoogleMcpServers({ tokenManager: stubTokenManager(), fetchImpl });
+    await buildGoogleMcpServers({
+      tokenManager: stubTokenManager(),
+      fetchImpl,
+      aiCalendarId: "aiCalId",
+    });
 
     await tool("calendar", "update_event").handler({
       calendarId: "aiCalId",
@@ -212,7 +220,11 @@ describe("googleTools / in-process Google MCP servers", () => {
 
   it("delete_event: DELETEs and tolerates a 204 empty body", async () => {
     const { fetchImpl, calls } = makeFetch({ status: 204 });
-    await buildGoogleMcpServers({ tokenManager: stubTokenManager(), fetchImpl });
+    await buildGoogleMcpServers({
+      tokenManager: stubTokenManager(),
+      fetchImpl,
+      aiCalendarId: "aiCalId",
+    });
 
     const res = await tool("calendar", "delete_event").handler({
       calendarId: "aiCalId",
@@ -285,5 +297,99 @@ describe("googleTools / in-process Google MCP servers", () => {
     const res = await tool("calendar", "list_calendars").handler({});
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain("token");
+  });
+});
+
+describe("googleTools / AI calendar hard enforcement (TASK-29)", () => {
+  const AI_CAL = "ai@group.calendar.google.com";
+  const writeArgs = {
+    create_event: {
+      summary: "X",
+      start: { dateTime: "2026-06-03T10:00:00+02:00" },
+      end: { dateTime: "2026-06-03T11:00:00+02:00" },
+    },
+    update_event: { eventId: "evt1", summary: "X" },
+    delete_event: { eventId: "evt1" },
+  } as const;
+
+  for (const name of ["create_event", "update_event", "delete_event"] as const) {
+    it(`${name}: writes when calendarId === aiCalendarId`, async () => {
+      const { fetchImpl, calls } = makeFetch({ body: { id: "evt1" } });
+      await buildGoogleMcpServers({
+        tokenManager: stubTokenManager(),
+        fetchImpl,
+        aiCalendarId: AI_CAL,
+      });
+      const res = await tool("calendar", name).handler({
+        calendarId: AI_CAL,
+        ...writeArgs[name],
+      });
+      expect(res.isError).toBeUndefined();
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toContain(encodeURIComponent(AI_CAL));
+    });
+
+    it(`${name}: defaults to aiCalendarId when calendarId is omitted`, async () => {
+      const { fetchImpl, calls } = makeFetch({ body: { id: "evt1" } });
+      await buildGoogleMcpServers({
+        tokenManager: stubTokenManager(),
+        fetchImpl,
+        aiCalendarId: AI_CAL,
+      });
+      const res = await tool("calendar", name).handler({ ...writeArgs[name] });
+      expect(res.isError).toBeUndefined();
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toContain(encodeURIComponent(AI_CAL));
+    });
+
+    it(`${name}: REFUSES a foreign calendarId without any fetch`, async () => {
+      const { fetchImpl, calls } = makeFetch({ body: { id: "evt1" } });
+      await buildGoogleMcpServers({
+        tokenManager: stubTokenManager(),
+        fetchImpl,
+        aiCalendarId: AI_CAL,
+      });
+      const res = await tool("calendar", name).handler({
+        calendarId: "personal@example.com",
+        ...writeArgs[name],
+      });
+      expect(res.isError).toBe(true);
+      expect(res.content[0].text).toContain("Refused");
+      expect(res.content[0].text).toContain(AI_CAL);
+      expect(res.content[0].text).toContain("personal@example.com");
+      expect(calls).toHaveLength(0);
+    });
+
+    it(`${name}: REFUSES all writes when aiCalendarId is unset (no fetch)`, async () => {
+      const { fetchImpl, calls } = makeFetch({ body: { id: "evt1" } });
+      await buildGoogleMcpServers({
+        tokenManager: stubTokenManager(),
+        fetchImpl,
+        // aiCalendarId intentionally omitted
+      });
+      const res = await tool("calendar", name).handler({
+        calendarId: AI_CAL,
+        ...writeArgs[name],
+      });
+      expect(res.isError).toBe(true);
+      expect(res.content[0].text).toContain("no AI calendar configured");
+      expect(calls).toHaveLength(0);
+    });
+  }
+
+  it("read tools are NOT restricted by aiCalendarId", async () => {
+    const { fetchImpl, calls } = makeFetch({ body: { items: [] } });
+    await buildGoogleMcpServers({
+      tokenManager: stubTokenManager(),
+      fetchImpl,
+      aiCalendarId: AI_CAL,
+    });
+    // list_events on a DIFFERENT calendar still fetches (conflict detection).
+    const res = await tool("calendar", "list_events").handler({
+      calendarId: "someone-else@example.com",
+    });
+    expect(res.isError).toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toContain(encodeURIComponent("someone-else@example.com"));
   });
 });

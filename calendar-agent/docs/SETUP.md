@@ -151,10 +151,27 @@ needed when a token's ~1h lifetime elapses.
 
 The `calendar.events` scope can read/write events but **cannot create a
 calendar**. So in **Google Calendar** (web), manually create a new calendar the
-agent will own — name it **`AI`** (recommended). The agent finds it by name via
-`list_calendars` and writes only there.
+agent will own — name it **`AI`** (recommended).
 
-> **→ RETURN THIS TO ME:** confirmation that a calendar named `AI` exists.
+Then **get its Calendar ID** and put it in the config as `aiCalendarId`. The
+agent does NOT pick the AI calendar by name — the write tools hard-enforce this
+exact ID, and **without it the agent refuses to write anything** (it only reads
+and escalates). To find the ID:
+
+- In **Google Calendar** (web): Settings → select the `AI` calendar →
+  **Integrate calendar → Calendar ID** (it usually ends with
+  `@group.calendar.google.com`); **or**
+- run the agent's `list_calendars` tool once and copy the `id` of the `AI`
+  calendar.
+
+Add it to `~/.config/agent-manager/calendar-agent.json`:
+
+```json
+"aiCalendarId": "xxxxxxxx@group.calendar.google.com"
+```
+
+> **→ RETURN THIS TO ME:** confirmation that a calendar named `AI` exists, and
+> its Calendar ID (so it can be set as `aiCalendarId`).
 
 ### 2.2 Create the Google Cloud project + enable APIs
 
@@ -284,6 +301,7 @@ You should see your `mcpServers` and `whitelist` printed back.
 - [ ] `<PATH_TO_REPO>` (whatsapp-mcp clone path) + bridge running & QR-scanned
 - [ ] WhatsApp group names to whitelist
 - [ ] Dedicated `AI` calendar created in Google Calendar
+- [ ] AI calendar's Calendar ID set as `aiCalendarId` in the config (without it the agent refuses to write)
 - [ ] Google Cloud APIs enabled: **Google Calendar API** + **Gmail API** (no "MCP API")
 - [ ] OAuth client (type **Web application**) created → Client ID + Client secret
 - [ ] `refresh_token` obtained (OAuth Playground or one-shot script)

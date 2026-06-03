@@ -1,6 +1,23 @@
-import { CalendarAgentHost, SdkQueryFn, SdkMessage } from "../host";
+import {
+  CalendarAgentHost,
+  SdkQueryFn,
+  SdkMessage,
+  withAiCalendarRuntime,
+} from "../host";
 import { QueueUserMessage } from "../messageQueue";
 import { GoogleMcpServers } from "../googleTools";
+
+// Mock buildGoogleMcpServers so we can assert the host passes aiCalendarId
+// through, without loading the ESM SDK / touching the network.
+const buildSpy = jest.fn(
+  async (_opts?: { aiCalendarId?: string }): Promise<GoogleMcpServers> => ({
+    calendar: { name: "calendar" },
+    gmail: { name: "gmail" },
+  })
+);
+jest.mock("../googleTools", () => ({
+  buildGoogleMcpServers: (opts?: { aiCalendarId?: string }) => buildSpy(opts),
+}));
 
 const STUB_PROMPT = "stub system prompt";
 
@@ -190,6 +207,53 @@ describe("CalendarAgentHost", () => {
 
     expect(kept).toHaveLength(2);
     expect(host.whitelist().whatsapp.groups).toEqual(["Family"]);
+  });
+
+  it("TASK-29: injects the configured AI calendar id into the effective prompt", () => {
+    const host = new CalendarAgentHost({
+      config: {
+        mcpServers: {},
+        aiCalendarId: "ai@group.calendar.google.com",
+      },
+      queryFn: makeFakeQuery().query,
+      // No systemPrompt override → host loads prompt.md and appends runtime block.
+      disableGoogle: true,
+    });
+    const prompt = host.effectiveSystemPrompt();
+    expect(prompt).toContain("Runtime configuration");
+    expect(prompt).toContain("ai@group.calendar.google.com");
+    expect(prompt).toContain("MUST use exactly this calendarId");
+  });
+
+  it("TASK-29: prompt tells the agent NOT to write when no AI calendar is configured", () => {
+    const host = new CalendarAgentHost({
+      config: { mcpServers: {} },
+      queryFn: makeFakeQuery().query,
+      disableGoogle: true,
+    });
+    const prompt = host.effectiveSystemPrompt();
+    expect(prompt).toContain("No AI calendar is configured");
+    expect(prompt).toContain("MUST NOT write");
+  });
+
+  it("TASK-29: passes aiCalendarId into buildGoogleMcpServers", async () => {
+    buildSpy.mockClear();
+    const fake = makeFakeQuery();
+    const host = new CalendarAgentHost({
+      config: {
+        mcpServers: {},
+        aiCalendarId: "ai@group.calendar.google.com",
+      },
+      queryFn: fake.query,
+      systemPrompt: STUB_PROMPT,
+      // googleMcpServers NOT provided → host builds them via buildGoogleMcpServers.
+    });
+    await host.start();
+    expect(buildSpy).toHaveBeenCalledTimes(1);
+    expect(buildSpy.mock.calls[0][0]).toMatchObject({
+      aiCalendarId: "ai@group.calendar.google.com",
+    });
+    await host.stop();
   });
 
   it("defaults to a deny-all whitelist when config omits one", () => {

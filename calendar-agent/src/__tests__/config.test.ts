@@ -46,6 +46,7 @@ describe("config / MCP server assembly", () => {
     try {
       const cfg = loadConfig();
       expect(cfg.mcpServers).toEqual({});
+      expect(cfg.aiCalendarId).toBeUndefined();
       expect(cfg.whitelist).toEqual({
         whatsapp: { groups: [] },
         gmail: { senders: [], labels: [] },
@@ -63,6 +64,7 @@ describe("config / MCP server assembly", () => {
       tmp,
       JSON.stringify({
         model: "claude-x",
+        aiCalendarId: "ai@group.calendar.google.com",
         mcpServers: {
           whatsapp: { command: "uv", args: ["run", "main.py"] },
         },
@@ -76,6 +78,7 @@ describe("config / MCP server assembly", () => {
     try {
       const cfg = loadConfig();
       expect(cfg.model).toBe("claude-x");
+      expect(cfg.aiCalendarId).toBe("ai@group.calendar.google.com");
       // Calendar + Gmail are NOT configured here — host builds them in-process.
       expect(Object.keys(cfg.mcpServers)).toEqual(["whatsapp"]);
       expect(cfg.whitelist.whatsapp.groups).toEqual(["Family"]);
