@@ -194,6 +194,17 @@ export function initDb(dbPath?: string): Database.Database {
       status TEXT CHECK(status IN ('running', 'success', 'failed', 'cancelled')),
       output TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS approvals (
+      id INTEGER PRIMARY KEY,
+      run_id INTEGER,
+      session_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'answered', 'dismissed')),
+      payload TEXT,
+      answer TEXT,
+      answered_at TEXT
+    );
   `);
 
   migrateRunsTable(db);

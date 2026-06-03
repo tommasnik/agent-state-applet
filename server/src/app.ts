@@ -13,6 +13,7 @@ import pipelineRouter from "./routes/pipeline";
 import { createAgentsRouter } from "./routes/agents";
 import promptsRouter from "./routes/prompts";
 import runsRouter from "./routes/runs";
+import approvalsRouter from "./routes/approvals";
 import type { ReviewMeta } from "./stateFile";
 import type { WriteStateFn } from "./index";
 import { type SystemCalls, defaultSystemCalls } from "./system-calls";
@@ -47,6 +48,7 @@ export function buildApp(
   app.use("/api", createAgentsRouter(writeState));
   app.use("/api", promptsRouter);
   app.use("/api", runsRouter);
+  app.use("/api", approvalsRouter);
 
   return app;
 }
