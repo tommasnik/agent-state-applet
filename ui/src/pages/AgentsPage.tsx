@@ -24,7 +24,7 @@ interface Agent {
   project_path: string;
   prompt: string | null;
   cron: string | null;
-  type: "interactive" | "headless";
+  type: "interactive" | "headless" | "calendar_agent";
   enabled: boolean;
   shortcut_icon: string | null;
   created_at: string;
@@ -281,7 +281,7 @@ function AgentModal({ projects, initialAgent, onClose, onSaved }: AgentModalProp
   const parsed = initialAgent?.cron ? parseCron(initialAgent.cron) : null;
   const [projectPath, setProjectPath] = useState(initialAgent?.project_path ?? projects[0]?.path ?? "");
   const [title, setTitle] = useState(initialAgent?.name ?? "");
-  const [type, setType] = useState<"interactive" | "headless">(initialAgent?.type ?? "interactive");
+  const [type, setType] = useState<"interactive" | "headless" | "calendar_agent">(initialAgent?.type ?? "interactive");
   // Terminal-only: open a shell in the project, no prompt (interactive agents only).
   const [justTerminal, setJustTerminal] = useState(
     initialAgent ? initialAgent.type === "interactive" && !initialAgent.prompt : false
@@ -298,7 +298,9 @@ function AgentModal({ projects, initialAgent, onClose, onSaved }: AgentModalProp
   const isEdit = !!initialAgent;
   // Terminal-only mode only applies to interactive agents.
   const terminalOnly = type === "interactive" && justTerminal;
-  const promptNeeded = !terminalOnly;
+  // calendar-agent is driven by its own JSON config (calendar-agent.json), not a
+  // free-text prompt, so no prompt is required for it.
+  const promptNeeded = !terminalOnly && type !== "calendar_agent";
   const canSubmit = (!promptNeeded || prompt.trim().length > 0) && !submitting;
 
   const handleBackdrop = useCallback(
@@ -317,7 +319,7 @@ function AgentModal({ projects, initialAgent, onClose, onSaved }: AgentModalProp
       const payload = {
         name: title.trim() || "Untitled",
         project_path: projectPath,
-        prompt: terminalOnly ? null : prompt.trim(),
+        prompt: promptNeeded ? prompt.trim() : null,
         cron,
         type,
         enabled: initialAgent?.enabled ?? true,
@@ -389,10 +391,11 @@ function AgentModal({ projects, initialAgent, onClose, onSaved }: AgentModalProp
                 <select
                   className="field-select"
                   value={type}
-                  onChange={(e) => setType(e.target.value as "interactive" | "headless")}
+                  onChange={(e) => setType(e.target.value as "interactive" | "headless" | "calendar_agent")}
                 >
                   <option value="interactive">Interactive (Ghostty)</option>
                   <option value="headless">Headless</option>
+                  <option value="calendar_agent">Calendar Agent (long-lived)</option>
                 </select>
               </div>
               <div className="field">

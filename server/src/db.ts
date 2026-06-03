@@ -83,7 +83,7 @@ function migrateSchedulesToAgents(db: Database.Database): void {
             project_path TEXT NOT NULL,
             prompt TEXT,
             cron TEXT,
-            type TEXT NOT NULL CHECK(type IN ('interactive', 'headless')),
+            type TEXT NOT NULL CHECK(type IN ('interactive', 'headless', 'calendar_agent')),
             enabled INTEGER NOT NULL DEFAULT 1,
             shortcut_icon TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -150,6 +150,48 @@ function migrateAgentsTable(db: Database.Database): void {
   const existingNames = columnNames(db, "agents");
   if (!existingNames.has("shortcut_icon")) {
     db.exec("ALTER TABLE agents ADD COLUMN shortcut_icon TEXT DEFAULT NULL");
+  }
+  migrateAgentsTypeCheck(db);
+}
+
+/**
+ * Widen the agents.type CHECK constraint to allow 'calendar_agent'.
+ * SQLite cannot ALTER a CHECK constraint, so rebuild the table when the stored
+ * schema still lacks 'calendar_agent'. Idempotent: a no-op once migrated or on
+ * a fresh DB (the CREATE TABLE above already includes the new value).
+ */
+function migrateAgentsTypeCheck(db: Database.Database): void {
+  if (!tableExists(db, "agents")) return;
+  const sql =
+    (db.prepare("SELECT sql FROM sqlite_master WHERE name = 'agents'").get() as
+      | { sql: string }
+      | undefined)?.sql ?? "";
+  if (sql.includes("calendar_agent")) return; // already widened (or fresh DB)
+
+  db.pragma("foreign_keys = OFF");
+  try {
+    const migrate = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE agents_migrated (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          project_path TEXT NOT NULL,
+          prompt TEXT,
+          cron TEXT,
+          type TEXT NOT NULL CHECK(type IN ('interactive', 'headless', 'calendar_agent')),
+          enabled INTEGER NOT NULL DEFAULT 1,
+          shortcut_icon TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO agents_migrated (id, name, project_path, prompt, cron, type, enabled, shortcut_icon, created_at)
+          SELECT id, name, project_path, prompt, cron, type, enabled, shortcut_icon, created_at FROM agents;
+        DROP TABLE agents;
+        ALTER TABLE agents_migrated RENAME TO agents;
+      `);
+    });
+    migrate();
+  } finally {
+    db.pragma("foreign_keys = ON");
   }
 }
 

@@ -1,6 +1,6 @@
 import * as cron from "node-cron";
 import { getDb } from "./db";
-import { runInteractive, runHeadless } from "./runner";
+import { runInteractive, runHeadless, runCalendarAgent } from "./runner";
 
 interface AgentConfig {
   id: number;
@@ -8,7 +8,7 @@ interface AgentConfig {
   project_path: string;
   prompt: string | null;
   cron: string | null;
-  type: "interactive" | "headless";
+  type: "interactive" | "headless" | "calendar_agent";
   enabled: number;
 }
 
@@ -16,7 +16,9 @@ const tasks = new Map<number, cron.ScheduledTask>();
 
 function executeSchedule(agent: AgentConfig): void {
   const prompt = agent.prompt ?? "";
-  if (agent.type === "interactive") {
+  if (agent.type === "calendar_agent") {
+    runCalendarAgent(agent.id, agent.project_path, 'scheduled');
+  } else if (agent.type === "interactive") {
     runInteractive(agent.id, agent.project_path, prompt, 'scheduled');
   } else {
     runHeadless(agent.id, agent.project_path, prompt, 'scheduled');

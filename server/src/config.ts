@@ -53,3 +53,25 @@ export function saveConfig(config: Config): void {
   ensureConfigDir();
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
 }
+
+/**
+ * Resolve the calendar-agent entrypoint (`calendar-agent/dist/index.js`).
+ *
+ * Resolution order:
+ *   1. $CALENDAR_AGENT_ENTRYPOINT (explicit path to the built index.js)
+ *   2. <repo root>/calendar-agent/dist/index.js, where the repo root is
+ *      derived relative to this file (server/src or server/dist → repo root).
+ *
+ * The path is intentionally NOT hardcoded to a user's absolute home dir; it is
+ * derived from the running server's own location so it follows the checkout.
+ */
+export function calendarAgentEntrypoint(): string {
+  const explicit = process.env.CALENDAR_AGENT_ENTRYPOINT;
+  if (explicit && explicit.length > 0) {
+    return expandTilde(explicit);
+  }
+  // __dirname is .../server/dist (built) or .../server/src (ts-node).
+  // Repo root is two levels up from either.
+  const repoRoot = path.resolve(__dirname, "..", "..");
+  return path.join(repoRoot, "calendar-agent", "dist", "index.js");
+}

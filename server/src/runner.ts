@@ -1,6 +1,9 @@
 import { spawn } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
 import { getDb } from "./db";
 import { broadcast } from "./ws";
+import { calendarAgentEntrypoint } from "./config";
 
 function insertRun(agentId: number, launchType: 'scheduled' | 'manual_trigger'): number {
   const db = getDb();
@@ -95,6 +98,74 @@ export function runInteractiveAnon(projectPath: string, prompt: string): number 
   });
   child.unref();
   return 0;
+}
+
+/**
+ * Launch the calendar-agent as a long-lived Agent SDK host
+ * (`node calendar-agent/dist/index.js`).
+ *
+ * Unlike runHeadless (a one-shot `claude --print`), this process is meant to
+ * stay up: it boots a persistent SDK session that waits for inputs/approvals.
+ * The run row therefore stays in 'running' state until the process actually
+ * exits — we only finalize on exit/error, never eagerly. The spawned `node`
+ * inherits the server's environment so the Claude subprocess it launches fires
+ * the state-report hook normally and the session shows up in the applet
+ * (including the waiting_for_approval state during escalations).
+ *
+ * Returns the run ID recorded in the DB.
+ */
+export function runCalendarAgent(
+  agentId: number,
+  projectPath: string,
+  launchType: 'scheduled' | 'manual_trigger' = 'manual_trigger'
+): number {
+  const runId = insertRun(agentId, launchType);
+  const entrypoint = calendarAgentEntrypoint();
+
+  if (!fs.existsSync(entrypoint)) {
+    const msg =
+      `calendar-agent entrypoint not found: ${entrypoint}. ` +
+      `Run \`npm run build\` in calendar-agent/ (or set CALENDAR_AGENT_ENTRYPOINT).`;
+    console.error(`[runner] ${msg}`);
+    finalizeRun(runId, "failed", msg);
+    broadcast({ event: "run_finished", runId, status: "failed" });
+    return runId;
+  }
+
+  const cwd = projectPath || path.dirname(path.dirname(entrypoint));
+  const proc = spawn("node", [entrypoint], {
+    cwd,
+    // Inherit the full environment so the SDK subprocess's hook reporting works.
+    env: { ...process.env, SCHEDULE_ID: agentId.toString() },
+  });
+
+  if (proc.pid !== undefined) {
+    getDb().prepare("UPDATE runs SET pid = ? WHERE id = ?").run(proc.pid, runId);
+  }
+
+  let output = "";
+  const append = (chunk: Buffer): void => {
+    const text = chunk.toString();
+    output += text;
+    broadcast({ event: "run_output", runId, chunk: text });
+  };
+  proc.stdout?.on("data", append);
+  proc.stderr?.on("data", append);
+
+  proc.on("error", (err: Error) => {
+    console.error(`[runner] calendar-agent launch failed: ${err.message}`);
+    finalizeRun(runId, "failed", output + `\nLaunch failed: ${err.message}`);
+    broadcast({ event: "run_finished", runId, status: "failed" });
+  });
+
+  // Long-lived: only finalize once the process actually exits.
+  proc.on("close", (code: number | null) => {
+    const status = code === 0 || code === null ? "success" : "failed";
+    finalizeRun(runId, status, output);
+    broadcast({ event: "run_finished", runId, status });
+  });
+
+  return runId;
 }
 
 /**
