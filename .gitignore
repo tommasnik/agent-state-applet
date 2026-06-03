@@ -13,3 +13,6 @@ server/dist/
 # React/Vite UI build artifacts
 ui/node_modules/
 ui/dist/
+# Calendar Agent build artifacts
+calendar-agent/node_modules/
+calendar-agent/dist/
