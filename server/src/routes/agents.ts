@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { getDb } from "../db";
 import { scheduleAdd, scheduleRemove, scheduleUpdate } from "../scheduler";
-import { runInteractive, runHeadless, runCalendarAgent } from "../runner";
+import { runInteractive, runHeadless, runCalendarAgent, runCalendarAgentCli } from "../runner";
 import type { WriteStateFn } from "../index";
 
 /**
@@ -61,7 +61,7 @@ interface AgentRow {
   project_path: string;
   prompt: string | null;
   cron: string | null;
-  type: "interactive" | "headless" | "calendar_agent";
+  type: "interactive" | "headless" | "calendar_agent" | "calendar_agent_cli";
   enabled: number;
   shortcut_icon: string | null;
   created_at: string;
@@ -115,7 +115,7 @@ router.post("/agents", (req: Request, res: Response) => {
   const { name, project_path, type, enabled = true } = req.body as {
     name: string;
     project_path: string;
-    type: "interactive" | "headless" | "calendar_agent";
+    type: "interactive" | "headless" | "calendar_agent" | "calendar_agent_cli";
     enabled?: boolean;
   };
   const prompt = optStr((req.body as { prompt?: unknown }).prompt);
@@ -126,8 +126,15 @@ router.post("/agents", (req: Request, res: Response) => {
     res.status(400).json({ error: "Missing required fields: name, project_path, type" });
     return;
   }
-  if (type !== "interactive" && type !== "headless" && type !== "calendar_agent") {
-    res.status(400).json({ error: "type must be 'interactive', 'headless' or 'calendar_agent'" });
+  if (
+    type !== "interactive" &&
+    type !== "headless" &&
+    type !== "calendar_agent" &&
+    type !== "calendar_agent_cli"
+  ) {
+    res.status(400).json({
+      error: "type must be 'interactive', 'headless', 'calendar_agent' or 'calendar_agent_cli'",
+    });
     return;
   }
   // Headless agents must have a prompt — there is nothing to "just open".
@@ -165,7 +172,7 @@ router.put("/agents/:id", (req: Request, res: Response) => {
     project_path: string;
     prompt: string | null;
     cron: string | null;
-    type: "interactive" | "headless" | "calendar_agent";
+    type: "interactive" | "headless" | "calendar_agent" | "calendar_agent_cli";
     enabled: boolean;
     shortcut_icon: string | null;
   }>;
@@ -237,6 +244,9 @@ router.post("/agents/:id/run", (req: Request, res: Response) => {
   if (agent.type === "calendar_agent") {
     const runId = runCalendarAgent(agent.id, agent.project_path, 'manual_trigger');
     res.json({ runId, type: "calendar_agent", message: "Long-lived calendar-agent started" });
+  } else if (agent.type === "calendar_agent_cli") {
+    const runId = runCalendarAgentCli(agent.id, agent.project_path, 'manual_trigger');
+    res.json({ runId, type: "calendar_agent_cli", message: "calendar-agent-cli (claude -p /sync-calendar) started" });
   } else if (agent.type === "interactive") {
     const runId = runInteractive(agent.id, agent.project_path, prompt, 'manual_trigger');
     res.json({ runId, type: "interactive" });

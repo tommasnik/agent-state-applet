@@ -34,9 +34,9 @@ jest.mock("fs", () => {
 });
 
 // Import runner AFTER mocks are set up
-import { runInteractive, runCalendarAgent } from "../runner";
+import { runInteractive, runCalendarAgent, runCalendarAgentCli } from "../runner";
 import * as fs from "fs";
-import { calendarAgentEntrypoint } from "../config";
+import { calendarAgentEntrypoint, calendarAgentCliDir } from "../config";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -286,6 +286,108 @@ describe("runCalendarAgent — long-lived SDK host launch", () => {
   test("fails fast with no spawn when the entrypoint is missing", () => {
     (fs.existsSync as jest.Mock).mockReturnValue(false);
     const runId = runCalendarAgent(2, "/tmp/project", "manual_trigger");
+
+    expect(mockSpawn).not.toHaveBeenCalled();
+    const row = db
+      .prepare("SELECT status FROM runs WHERE id = ?")
+      .get(runId) as { status: string };
+    expect(row.status).toBe("failed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TASK-40 — runCalendarAgentCli: `claude -p "/sync-calendar"` in calendar-agent-cli/
+// ---------------------------------------------------------------------------
+describe("runCalendarAgentCli — claude -p /sync-calendar launch", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    mockSpawn.mockClear();
+    mockChildProcess.pid = 99999;
+    (fs.existsSync as jest.Mock).mockReturnValue(true);
+    db = setupDb();
+    db.prepare(
+      "INSERT INTO agents (id, name, project_path, prompt, cron, type, enabled) VALUES (3, 'cal-cli', '/tmp', NULL, NULL, 'calendar_agent_cli', 1)"
+    ).run();
+    setTestDb(db);
+  });
+
+  // AC#1 — launches `claude -p "/sync-calendar"`.
+  test("spawns `claude` with -p /sync-calendar", () => {
+    runCalendarAgentCli(3, "", "manual_trigger");
+
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    const [cmd, argv] = mockSpawn.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("claude");
+    expect(argv).toEqual(["-p", "/sync-calendar"]);
+  });
+
+  // AC#1 — defaults cwd to the calendar-agent-cli directory when no project_path.
+  test("uses the calendar-agent-cli dir as cwd by default", () => {
+    runCalendarAgentCli(3, "", "manual_trigger");
+    const opts = (mockSpawn.mock.calls[0] as unknown[])[2] as { cwd?: string };
+    expect(opts.cwd).toBe(calendarAgentCliDir());
+    expect(opts.cwd).toMatch(/calendar-agent-cli$/);
+  });
+
+  // A per-agent project_path overrides the default cwd.
+  test("honors an explicit project_path as cwd", () => {
+    runCalendarAgentCli(3, "/custom/work/dir", "manual_trigger");
+    const opts = (mockSpawn.mock.calls[0] as unknown[])[2] as { cwd?: string };
+    expect(opts.cwd).toBe("/custom/work/dir");
+  });
+
+  // AC#2 — the run is recorded; long-lived so it stays 'running' at launch.
+  test("inserts a runs row with pid, launch_type, status 'running'", () => {
+    const runId = runCalendarAgentCli(3, "", "manual_trigger");
+    const row = db
+      .prepare("SELECT pid, launch_type, status, finished_at FROM runs WHERE id = ?")
+      .get(runId) as { pid: number; launch_type: string; status: string; finished_at: string | null };
+
+    expect(row.pid).toBe(99999);
+    expect(row.launch_type).toBe("manual_trigger");
+    expect(row.status).toBe("running");
+    expect(row.finished_at).toBeNull();
+  });
+
+  // AC#3 — long-lived: not finalized until the process actually exits.
+  test("does not finalize the run until the process exits", () => {
+    const runId = runCalendarAgentCli(3, "", "manual_trigger");
+
+    const before = db
+      .prepare("SELECT status FROM runs WHERE id = ?")
+      .get(runId) as { status: string };
+    expect(before.status).toBe("running");
+
+    mockChildProcess.emit("close", 0);
+
+    const after = db
+      .prepare("SELECT status, finished_at FROM runs WHERE id = ?")
+      .get(runId) as { status: string; finished_at: string | null };
+    expect(after.status).toBe("success");
+    expect(after.finished_at).not.toBeNull();
+  });
+
+  // AC#3 — non-zero exit marks the run failed.
+  test("marks the run failed on non-zero exit", () => {
+    const runId = runCalendarAgentCli(3, "", "scheduled");
+    mockChildProcess.emit("close", 1);
+    const row = db
+      .prepare("SELECT status FROM runs WHERE id = ?")
+      .get(runId) as { status: string };
+    expect(row.status).toBe("failed");
+  });
+
+  // AC#3 — inherits SCHEDULE_ID so the hook reports into the applet.
+  test("inherits SCHEDULE_ID in the spawned environment (hook reporting)", () => {
+    runCalendarAgentCli(3, "", "manual_trigger");
+    const opts = (mockSpawn.mock.calls[0] as unknown[])[2] as { env?: Record<string, string> };
+    expect(opts.env!["SCHEDULE_ID"]).toBe("3");
+  });
+
+  test("fails fast with no spawn when the cli dir is missing", () => {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    const runId = runCalendarAgentCli(3, "", "manual_trigger");
 
     expect(mockSpawn).not.toHaveBeenCalled();
     const row = db

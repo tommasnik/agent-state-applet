@@ -75,3 +75,24 @@ export function calendarAgentEntrypoint(): string {
   const repoRoot = path.resolve(__dirname, "..", "..");
   return path.join(repoRoot, "calendar-agent", "dist", "index.js");
 }
+
+/**
+ * Resolve the calendar-agent-cli directory (the CLI-driven Calendar Agent,
+ * sibling of `calendar-agent/`). This is the cwd in which we launch
+ * `claude -p "/sync-calendar"`.
+ *
+ * Resolution order:
+ *   1. $CALENDAR_AGENT_CLI_DIR (explicit path to the folder)
+ *   2. <repo root>/calendar-agent-cli, derived relative to this file.
+ *
+ * Like calendarAgentEntrypoint(), the path is NOT hardcoded to an absolute home
+ * dir — it follows the running server's checkout.
+ */
+export function calendarAgentCliDir(): string {
+  const explicit = process.env.CALENDAR_AGENT_CLI_DIR;
+  if (explicit && explicit.length > 0) {
+    return expandTilde(explicit);
+  }
+  const repoRoot = path.resolve(__dirname, "..", "..");
+  return path.join(repoRoot, "calendar-agent-cli");
+}

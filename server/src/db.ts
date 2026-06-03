@@ -83,7 +83,7 @@ function migrateSchedulesToAgents(db: Database.Database): void {
             project_path TEXT NOT NULL,
             prompt TEXT,
             cron TEXT,
-            type TEXT NOT NULL CHECK(type IN ('interactive', 'headless', 'calendar_agent')),
+            type TEXT NOT NULL CHECK(type IN ('interactive', 'headless', 'calendar_agent', 'calendar_agent_cli')),
             enabled INTEGER NOT NULL DEFAULT 1,
             shortcut_icon TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -155,10 +155,12 @@ function migrateAgentsTable(db: Database.Database): void {
 }
 
 /**
- * Widen the agents.type CHECK constraint to allow 'calendar_agent'.
- * SQLite cannot ALTER a CHECK constraint, so rebuild the table when the stored
- * schema still lacks 'calendar_agent'. Idempotent: a no-op once migrated or on
- * a fresh DB (the CREATE TABLE above already includes the new value).
+ * Widen the agents.type CHECK constraint to allow 'calendar_agent' and
+ * 'calendar_agent_cli'. SQLite cannot ALTER a CHECK constraint, so rebuild the
+ * table when the stored schema still lacks 'calendar_agent_cli'. Idempotent: a
+ * no-op once migrated or on a fresh DB (the CREATE TABLE above already includes
+ * the new values). The guard checks the *narrowest* value ('calendar_agent_cli')
+ * so a DB previously widened only to 'calendar_agent' is still upgraded.
  */
 function migrateAgentsTypeCheck(db: Database.Database): void {
   if (!tableExists(db, "agents")) return;
@@ -166,7 +168,7 @@ function migrateAgentsTypeCheck(db: Database.Database): void {
     (db.prepare("SELECT sql FROM sqlite_master WHERE name = 'agents'").get() as
       | { sql: string }
       | undefined)?.sql ?? "";
-  if (sql.includes("calendar_agent")) return; // already widened (or fresh DB)
+  if (sql.includes("calendar_agent_cli")) return; // already widened (or fresh DB)
 
   db.pragma("foreign_keys = OFF");
   try {
@@ -178,7 +180,7 @@ function migrateAgentsTypeCheck(db: Database.Database): void {
           project_path TEXT NOT NULL,
           prompt TEXT,
           cron TEXT,
-          type TEXT NOT NULL CHECK(type IN ('interactive', 'headless', 'calendar_agent')),
+          type TEXT NOT NULL CHECK(type IN ('interactive', 'headless', 'calendar_agent', 'calendar_agent_cli')),
           enabled INTEGER NOT NULL DEFAULT 1,
           shortcut_icon TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now'))

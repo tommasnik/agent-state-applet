@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { getDb } from "./db";
 import { broadcast } from "./ws";
-import { calendarAgentEntrypoint } from "./config";
+import { calendarAgentEntrypoint, calendarAgentCliDir } from "./config";
 
 function insertRun(agentId: number, launchType: 'scheduled' | 'manual_trigger'): number {
   const db = getDb();
@@ -154,6 +154,81 @@ export function runCalendarAgent(
 
   proc.on("error", (err: Error) => {
     console.error(`[runner] calendar-agent launch failed: ${err.message}`);
+    finalizeRun(runId, "failed", output + `\nLaunch failed: ${err.message}`);
+    broadcast({ event: "run_finished", runId, status: "failed" });
+  });
+
+  // Long-lived: only finalize once the process actually exits.
+  proc.on("close", (code: number | null) => {
+    const status = code === 0 || code === null ? "success" : "failed";
+    finalizeRun(runId, status, output);
+    broadcast({ event: "run_finished", runId, status });
+  });
+
+  return runId;
+}
+
+/**
+ * Launch the calendar-agent-cli — the CLI-driven Calendar Agent (sibling of the
+ * SDK reference solution). Runs `claude -p "/sync-calendar"` with cwd set to the
+ * calendar-agent-cli/ folder, where `.claude/settings.json` whitelists the Bash
+ * commands the `/sync-calendar` skill needs (`node dist/cli.js …`, `cal-agent …`).
+ *
+ * Like runCalendarAgent (the SDK host) this is treated as long-lived: the run row
+ * stays 'running' until the `claude` process actually exits — we only finalize on
+ * exit/error. The spawned process inherits the server's environment (+ SCHEDULE_ID)
+ * so the state-report hook fires and the session shows up in the applet, including
+ * waiting_for_approval during escalations.
+ *
+ * Permissions in headless mode rely on the folder's `.claude/settings.json` allow
+ * list — we intentionally do NOT pass `--dangerously-skip-permissions`. If the
+ * allow list is insufficient, a tool call may be auto-denied; widen settings.json
+ * rather than the launcher.
+ *
+ * Returns the run ID recorded in the DB.
+ */
+export function runCalendarAgentCli(
+  agentId: number,
+  projectPath: string,
+  launchType: 'scheduled' | 'manual_trigger' = 'manual_trigger'
+): number {
+  const runId = insertRun(agentId, launchType);
+  const cliDir = calendarAgentCliDir();
+
+  if (!fs.existsSync(cliDir)) {
+    const msg =
+      `calendar-agent-cli directory not found: ${cliDir}. ` +
+      `Set CALENDAR_AGENT_CLI_DIR or check the checkout.`;
+    console.error(`[runner] ${msg}`);
+    finalizeRun(runId, "failed", msg);
+    broadcast({ event: "run_finished", runId, status: "failed" });
+    return runId;
+  }
+
+  // projectPath is configurable per-agent but the launcher's contract is to run
+  // inside the CLI folder so the skill + settings.json resolve correctly.
+  const cwd = projectPath || cliDir;
+  const proc = spawn("claude", ["-p", "/sync-calendar"], {
+    cwd,
+    // Inherit the full environment so the Claude subprocess's hook reporting works.
+    env: { ...process.env, SCHEDULE_ID: agentId.toString() },
+  });
+
+  if (proc.pid !== undefined) {
+    getDb().prepare("UPDATE runs SET pid = ? WHERE id = ?").run(proc.pid, runId);
+  }
+
+  let output = "";
+  const append = (chunk: Buffer): void => {
+    const text = chunk.toString();
+    output += text;
+    broadcast({ event: "run_output", runId, chunk: text });
+  };
+  proc.stdout?.on("data", append);
+  proc.stderr?.on("data", append);
+
+  proc.on("error", (err: Error) => {
+    console.error(`[runner] calendar-agent-cli launch failed: ${err.message}`);
     finalizeRun(runId, "failed", output + `\nLaunch failed: ${err.message}`);
     broadcast({ event: "run_finished", runId, status: "failed" });
   });
