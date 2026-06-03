@@ -1,10 +1,10 @@
 ---
 id: TASK-38
 title: Calendar Agent CLI — approvals příkazy + one-shot eskalační model
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 16:30'
-updated_date: '2026-06-03 16:50'
+updated_date: '2026-06-03 16:57'
 labels:
   - calendar-agent-cli
 dependencies:

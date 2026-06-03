@@ -1,10 +1,10 @@
 ---
 id: TASK-41
 title: Calendar Agent CLI — návod + srovnání s referenčním SDK řešením
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 16:30'
-updated_date: '2026-06-03 17:16'
+updated_date: '2026-06-03 17:23'
 labels:
   - calendar-agent-cli
 dependencies:

@@ -1,10 +1,10 @@
 ---
 id: TASK-40
 title: Calendar Agent CLI — launch integrace do applet scheduleru
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 16:30'
-updated_date: '2026-06-03 17:08'
+updated_date: '2026-06-03 17:16'
 labels:
   - calendar-agent-cli
 dependencies:

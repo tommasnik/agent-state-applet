@@ -3,10 +3,10 @@ id: TASK-36
 title: >-
   Calendar Agent CLI — Google příkazy (calendar + gmail) + AI-cal write
   enforcement
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 16:30'
-updated_date: '2026-06-03 16:34'
+updated_date: '2026-06-03 16:42'
 labels:
   - calendar-agent-cli
 dependencies:

@@ -313,10 +313,11 @@ začátku běhu.
 
 Data jsou živá jen dokud Go bridge běží, takže ho provozuj jako systemd
 **user** službu s auto-restartem/reconnectem. Unit je v repu na
-`systemd/whatsapp-bridge.service`.
+`systemd/whatsapp-bridge.service` (v kořeni repozitáře, o úroveň výš než tento
+balíček).
 
 ```bash
-# z kořene balíčku
+# z kořene repozitáře (agent-state-applet/)
 mkdir -p ~/.config/systemd/user
 cp systemd/whatsapp-bridge.service ~/.config/systemd/user/
 systemctl --user daemon-reload

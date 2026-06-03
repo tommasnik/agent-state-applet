@@ -1,10 +1,10 @@
 ---
 id: TASK-35
 title: Calendar Agent CLI — package scaffold + sdílený config loader
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 16:30'
-updated_date: '2026-06-03 16:31'
+updated_date: '2026-06-03 16:34'
 labels:
   - calendar-agent-cli
 dependencies: []

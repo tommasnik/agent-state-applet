@@ -3,10 +3,10 @@ id: TASK-37
 title: >-
   Calendar Agent CLI — WhatsApp příkazy (čtení bridge SQLite, whitelist) +
   bridge daemon + liveness guard
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 16:30'
-updated_date: '2026-06-03 16:42'
+updated_date: '2026-06-03 16:50'
 labels:
   - calendar-agent-cli
 dependencies:

@@ -1,10 +1,10 @@
 ---
 id: TASK-39
 title: Calendar Agent CLI — Claude projekt config (CLAUDE.md + skill + settings)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-03 16:30'
-updated_date: '2026-06-03 16:57'
+updated_date: '2026-06-03 17:08'
 labels:
   - calendar-agent-cli
 dependencies:
