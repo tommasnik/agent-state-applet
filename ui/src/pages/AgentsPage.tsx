@@ -294,6 +294,7 @@ function AgentModal({ projects, initialAgent, onClose, onSaved }: AgentModalProp
   const [recurrence, setRecurrence] = useState(parsed?.recurrence ?? "once");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pickingDir, setPickingDir] = useState(false);
 
   const isEdit = !!initialAgent;
   // Terminal-only mode only applies to interactive agents.
@@ -310,6 +311,33 @@ function AgentModal({ projects, initialAgent, onClose, onSaved }: AgentModalProp
     },
     [onClose]
   );
+
+  async function pickDirectory() {
+    if (pickingDir) return;
+    setPickingDir(true);
+    setError(null);
+    try {
+      const resp = await fetch("/api/pick-directory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start: projectPath || undefined }),
+      });
+      const data = (await resp.json().catch(() => ({}))) as {
+        path?: string;
+        cancelled?: boolean;
+        error?: string;
+      };
+      if (!resp.ok) {
+        setError(data.error ?? `HTTP ${resp.status}`);
+        return;
+      }
+      if (data.path) setProjectPath(data.path);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setPickingDir(false);
+    }
+  }
 
   async function submit() {
     if (!canSubmit) return;
@@ -360,20 +388,36 @@ function AgentModal({ projects, initialAgent, onClose, onSaved }: AgentModalProp
           <div className="form-grid">
             <div className="field">
               <label className="field-label">Project (workdir)</label>
-              <select
-                className="field-select"
-                value={projectPath}
-                onChange={(e) => setProjectPath(e.target.value)}
-              >
-                {projects.length === 0 && (
-                  <option value="">No projects found</option>
-                )}
-                {projects.map((p) => (
-                  <option key={p.path} value={p.path}>
-                    {p.name} — {p.path}
-                  </option>
-                ))}
-              </select>
+              <div className="field-row">
+                <select
+                  className="field-select"
+                  style={{ flex: 1 }}
+                  value={projectPath}
+                  onChange={(e) => setProjectPath(e.target.value)}
+                >
+                  {projects.length === 0 && projectPath === "" && (
+                    <option value="">No projects found</option>
+                  )}
+                  {/* Show a custom (browsed) path that isn't one of the known projects. */}
+                  {projectPath && !projects.some((p) => p.path === projectPath) && (
+                    <option value={projectPath}>Custom — {projectPath}</option>
+                  )}
+                  {projects.map((p) => (
+                    <option key={p.path} value={p.path}>
+                      {p.name} — {p.path}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={pickingDir}
+                  onClick={pickDirectory}
+                  title="Pick a directory with a native file chooser"
+                >
+                  {pickingDir ? "Opening…" : "Browse…"}
+                </button>
+              </div>
             </div>
 
             <div className="field">

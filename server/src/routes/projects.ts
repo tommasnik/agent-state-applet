@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -49,6 +50,62 @@ router.get("/projects", (_req: Request, res: Response) => {
   const config = loadConfig();
   const projects = scanProjects(config.projectRoots);
   res.json(projects);
+});
+
+// ----------------------------------------------------------------
+// POST /api/pick-directory
+//
+// Opens a native GTK directory chooser (zenity) on the local machine
+// and returns the chosen absolute path. The server runs locally next
+// to the desktop session, so this is how the web UI gets a real
+// filesystem path — a browser file chooser only yields relative names.
+// ----------------------------------------------------------------
+
+router.post("/pick-directory", (req: Request, res: Response) => {
+  const home = os.homedir();
+  const config = loadConfig();
+  const requestedStart = (req.body as { start?: unknown }).start;
+  // Pick a sensible starting dir: requested → first project root → home.
+  const firstRoot = config.projectRoots[0]?.replace(/^~/, home);
+  let startDir =
+    (typeof requestedStart === "string" && requestedStart.trim()) ||
+    firstRoot ||
+    home;
+  startDir = path.resolve(startDir.replace(/^~/, home));
+  // zenity wants the --filename to end with a separator to open *inside* a dir.
+  const filenameArg = startDir.endsWith(path.sep) ? startDir : startDir + path.sep;
+
+  const env = {
+    ...process.env,
+    DISPLAY: process.env["DISPLAY"] ?? ":0",
+  };
+
+  const result = spawnSync(
+    "zenity",
+    [
+      "--file-selection",
+      "--directory",
+      "--title=Select working directory",
+      `--filename=${filenameArg}`,
+    ],
+    { env, timeout: 120000, encoding: "utf-8" }
+  );
+
+  if (result.error) {
+    res.status(500).json({ error: `Failed to open file picker: ${result.error.message}` });
+    return;
+  }
+  // zenity exits 1 when the user cancels.
+  if (result.status !== 0) {
+    res.json({ cancelled: true });
+    return;
+  }
+  const picked = (result.stdout ?? "").trim();
+  if (!picked) {
+    res.json({ cancelled: true });
+    return;
+  }
+  res.json({ path: picked });
 });
 
 // ----------------------------------------------------------------
