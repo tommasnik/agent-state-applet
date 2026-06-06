@@ -111,11 +111,19 @@ class ClaudeIndicator extends PanelMenu.Button {
         });
 
         // Dashboard button — always visible, opens web UI at :7855.
+        const dashStyle = 'color: #7ecfff; font-size: 20px; padding: 0 10px;';
         const dashBtn = new St.Label({
-            text:    '⚙',
-            style:   'color: #7ecfff; font-size: 20px; padding: 0 10px;',
-            reactive: true,
-            y_align: Clutter.ActorAlign.CENTER,
+            text:        '⚙',
+            style:       dashStyle,
+            reactive:    true,
+            track_hover: true,
+            y_align:     Clutter.ActorAlign.CENTER,
+        });
+        // Hover affordance — signal the gear is clickable (opens the web UI).
+        dashBtn.connect('notify::hover', () => {
+            dashBtn.set_style(dashBtn.hover
+                ? dashStyle + ' background-color: rgba(255,255,255,0.16); border-radius: 4px;'
+                : dashStyle);
         });
         dashBtn.connect('button-press-event', () => {
             Util.spawn(['xdg-open', 'http://127.0.0.1:7855/']);
