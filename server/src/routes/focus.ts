@@ -4,7 +4,7 @@ import * as url from "url";
 import type { AgentStore } from "../agents";
 import { parseXid } from "../agents";
 import type { WriteStateFn } from "../index";
-import { type SystemCalls, defaultSystemCalls } from "../system-calls";
+import { type SystemCalls, defaultSystemCalls, resolveXEnv } from "../system-calls";
 
 type WmWindow = { xid: string; desktop: string; title: string };
 
@@ -73,7 +73,7 @@ export function createFocusRouter(store: AgentStore, writeState: WriteStateFn, s
 
     let windowId = agent.window_id ?? "";
     const projectRoot = agent.project_root ?? "";
-    const env = { ...process.env, DISPLAY: process.env["DISPLAY"] ?? ":0" };
+    const env = resolveXEnv();
 
     // --- Window focus via wmctrl ---
     try {
